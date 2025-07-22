@@ -12,20 +12,16 @@ import 'package:shared_preferences/shared_preferences.dart';
 import 'package:flutter/foundation.dart' show kIsWeb;
 
 class ApiService {
-  static const String _baseUrl = kIsWeb ? 'http://localhost:8000/api' : 'http://10.0.2.2:8000/api';
+  // IMPORTANT: For deployment, replace localhost/10.0.2.2 with your live Render URL.
+  // The base URL for your Django backend API.
+  // Use your Render.com service URL here.
+  static const String _baseUrl = 'https://africana-ntgr.onrender.com/api'; // UPDATED TO YOUR RENDER URL
 
   String? _authToken;
-  int? _currentUserId; // This will now be explicitly set for demo
+  int? _currentUserId;
 
-  // IMPORTANT FOR HACKATHON DEMO:
-  // Hardcode a token here for judges to bypass login.
-  // REPLACE 'YOUR_GENERATED_DJANGO_TOKEN_HERE' with the actual token you copied from Django admin.
-  // Make sure there are no extra spaces or hidden characters.
   static const String _demoAuthToken = '7a22cba24bac92bde8419d8a1fdee152f921188c';
-  // IMPORTANT FOR HACKATHON DEMO:
-  // Hardcode the user ID associated with the _demoAuthToken.
-  // This is crucial for fetching student profiles and recording attempts without a full login flow.
-  static const int _demoUserId = 5; // <--- SET THIS TO THE USER ID YOU FOUND IN DJANGO ADMIN
+  static const int _demoUserId = 5; // User ID associated with the demo token
 
   ApiService() {
     _loadAuthToken();
