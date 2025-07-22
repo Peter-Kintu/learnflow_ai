@@ -1,11 +1,13 @@
 // learnflow_ai/flutter_app/lib/screens/home_screen.dart
 
 import 'package:flutter/material.dart';
+import 'package:learnflow_ai/models/user.dart';
 import 'package:learnflow_ai/services/api_service.dart';
-import 'package:learnflow_ai/models/student.dart';
 import 'package:learnflow_ai/screens/lessons_screen.dart';
 import 'package:learnflow_ai/screens/teacher_dashboard_screen.dart';
-import 'package:learnflow_ai/screens/sync_status_screen.dart'; // ADDED: Import SyncStatusScreen
+import 'package:learnflow_ai/screens/sync_status_screen.dart';
+import 'package:learnflow_ai/screens/wallet_screen.dart'; // Import WalletScreen
+import 'package:url_launcher/url_launcher.dart';
 
 class HomeScreen extends StatefulWidget {
   const HomeScreen({super.key});
@@ -14,212 +16,266 @@ class HomeScreen extends StatefulWidget {
   State<HomeScreen> createState() => _HomeScreenState();
 }
 
-class _HomeScreenState extends State<HomeScreen> {
+class _HomeScreenState extends State<HomeScreen> with SingleTickerProviderStateMixin {
   final ApiService _apiService = ApiService();
-  Student? _currentStudent;
-  bool _isLoadingStudent = true;
-  String? _studentFetchError;
+  User? _currentUser; // This is directly the User object
+  bool _isLoading = true;
+
+  // Animation controller for the icon and text
+  late AnimationController _animationController;
+  late Animation<double> _scaleAnimation;
+  late Animation<double> _fadeAnimation;
 
   @override
   void initState() {
     super.initState();
-    _fetchStudentProfile();
+    _fetchCurrentUser();
+
+    _animationController = AnimationController(
+      vsync: this,
+      duration: const Duration(milliseconds: 1200), // Slightly longer duration
+    );
+
+    _scaleAnimation = Tween<double>(begin: 0.7, end: 1.0).animate(
+      CurvedAnimation(
+        parent: _animationController,
+        curve: Curves.easeOutBack, // More dynamic curve
+      ),
+    );
+
+    _fadeAnimation = Tween<double>(begin: 0.0, end: 1.0).animate(
+      CurvedAnimation(
+        parent: _animationController,
+        curve: Curves.easeIn, // Smooth fade in
+      ),
+    );
+
+    _animationController.forward(); // Start the animation
   }
 
-  Future<void> _fetchStudentProfile() async {
+  @override
+  void dispose() {
+    _animationController.dispose();
+    super.dispose();
+  }
+
+  Future<void> _fetchCurrentUser() async {
     setState(() {
-      _isLoadingStudent = true;
-      _studentFetchError = null;
+      _isLoading = true;
     });
     try {
-      final student = await _apiService.fetchCurrentStudentProfile();
+      final user = await _apiService.fetchCurrentUser(); // This returns a User object
       setState(() {
-        _currentStudent = student;
-        _isLoadingStudent = false;
+        _currentUser = user; // _currentUser is directly assigned the User object
+        _isLoading = false;
       });
+      if (user == null) {
+        print("No current user found or token invalid. Please log in.");
+      }
     } catch (e) {
+      print('Error fetching current user: $e');
       setState(() {
-        _studentFetchError = 'Failed to load student profile.';
-        _isLoadingStudent = false;
+        _isLoading = false;
       });
-      print('Error fetching student profile: $e');
-    }
-  }
-
-  String _getWelcomeMessage() {
-    if (_isLoadingStudent) {
-      return 'Loading...';
-    } else if (_studentFetchError != null) {
-      return 'Welcome! (Error loading profile)';
-    } else if (_currentStudent != null && _currentStudent!.user != null) {
-      return 'Welcome, ${_currentStudent!.user!.username}!';
-    } else {
-      return 'Welcome to LearnFlow AI!';
     }
   }
 
   @override
   Widget build(BuildContext context) {
-    // Get screen size for responsive design
     final size = MediaQuery.of(context).size;
+
+    if (_isLoading) {
+      return Scaffold(
+        appBar: AppBar(
+          title: const Text('LearnFlow AI'),
+          backgroundColor: Colors.deepPurple.shade900,
+          foregroundColor: Colors.white,
+          centerTitle: true,
+          elevation: 0,
+        ),
+        body: Container(
+          decoration: BoxDecoration(
+            gradient: LinearGradient(
+              colors: [Colors.deepPurple.shade900, Colors.indigo.shade800, Colors.purple.shade700],
+              begin: Alignment.topCenter,
+              end: Alignment.bottomCenter,
+            ),
+          ),
+          child: const Center(child: CircularProgressIndicator(color: Colors.white)),
+        ),
+      );
+    }
 
     return Scaffold(
       appBar: AppBar(
         title: const Text('LearnFlow AI'),
-        backgroundColor: Colors.deepPurple,
+        backgroundColor: Colors.deepPurple.shade900, // Even darker purple for app bar
         foregroundColor: Colors.white,
         centerTitle: true,
+        elevation: 0,
+        actions: [
+          // Wallet Button in AppBar
+          IconButton(
+            icon: const Icon(Icons.account_balance_wallet_rounded, size: 30), // Larger, rounded icon
+            color: Colors.amber.shade400, // Richer gold for the icon
+            tooltip: 'My Wallet (LFT)',
+            onPressed: () {
+              Navigator.push(
+                context,
+                MaterialPageRoute(builder: (context) => const WalletScreen()),
+              );
+            },
+          ),
+          IconButton(
+            icon: const Icon(Icons.logout_rounded, size: 30), // Larger, rounded icon
+            tooltip: 'Logout',
+            onPressed: () async {
+              await _apiService.logout();
+              print('Logged out.');
+              // No need to setState _currentUser = null here, as main.dart always goes to HomeScreen
+              // For a real app, you'd navigate to AuthScreen here.
+            },
+          ),
+        ],
       ),
       body: Container(
         decoration: BoxDecoration(
           gradient: LinearGradient(
-            colors: [Colors.deepPurple.shade700, Colors.purpleAccent.shade400],
+            colors: [Colors.deepPurple.shade900, Colors.indigo.shade800, Colors.purple.shade700], // Deeper, richer gradient
             begin: Alignment.topCenter,
             end: Alignment.bottomCenter,
           ),
         ),
         child: Center(
           child: SingleChildScrollView(
-            padding: const EdgeInsets.all(24.0),
+            padding: const EdgeInsets.symmetric(horizontal: 32.0, vertical: 40.0), // Increased vertical padding
             child: Column(
               mainAxisAlignment: MainAxisAlignment.center,
               children: <Widget>[
-                // App Icon/Logo Placeholder
-                Container(
-                  padding: const EdgeInsets.all(20),
-                  decoration: BoxDecoration(
-                    color: Colors.white.withOpacity(0.2),
-                    shape: BoxShape.circle,
-                    boxShadow: [
-                      BoxShadow(
-                        color: Colors.black.withOpacity(0.2),
-                        blurRadius: 10,
-                        offset: const Offset(0, 5),
+                // Animated icon for a more dynamic feel
+                FadeTransition(
+                  opacity: _fadeAnimation,
+                  child: ScaleTransition(
+                    scale: _scaleAnimation,
+                    child: Container(
+                      padding: const EdgeInsets.all(35), // Even larger padding for icon
+                      decoration: BoxDecoration(
+                        color: Colors.white.withOpacity(0.25), // Slightly more opaque
+                        shape: BoxShape.circle,
+                        boxShadow: [
+                          BoxShadow(
+                            color: Colors.black.withOpacity(0.4), // Stronger shadow
+                            blurRadius: 20, // More blur
+                            offset: const Offset(0, 10), // More offset
+                          ),
+                        ],
                       ),
-                    ],
-                  ),
-                  child: const Icon(
-                    Icons.lightbulb_outline, // A more engaging icon
-                    size: 80,
-                    color: Colors.white,
-                  ),
-                ),
-                const SizedBox(height: 40),
-
-                // Welcome Message
-                Text(
-                  _getWelcomeMessage(),
-                  style: TextStyle(
-                    fontSize: size.width * 0.06, // Responsive font size
-                    fontWeight: FontWeight.bold,
-                    color: Colors.white,
-                    shadows: const [
-                      Shadow(
-                        blurRadius: 10.0,
-                        color: Colors.black38,
-                        offset: Offset(2.0, 2.0),
+                      child: const Icon(
+                        Icons.lightbulb_outline_rounded, // Rounded icon
+                        size: 90, // Larger icon
+                        color: Colors.white,
                       ),
-                    ],
-                  ),
-                  textAlign: TextAlign.center,
-                ),
-                const SizedBox(height: 15),
-
-                // Tagline
-                Text(
-                  'Your personalized learning journey awaits!',
-                  style: TextStyle(
-                    fontSize: size.width * 0.035, // Responsive font size
-                    color: Colors.white70,
-                    fontStyle: FontStyle.italic,
-                  ),
-                  textAlign: TextAlign.center,
-                ),
-                const SizedBox(height: 60),
-
-                // Action Buttons
-                SizedBox(
-                  width: size.width * 0.7, // Responsive button width
-                  child: ElevatedButton.icon(
-                    onPressed: () {
-                      Navigator.push(
-                        context,
-                        MaterialPageRoute(builder: (context) => const LessonsScreen()),
-                      );
-                    },
-                    icon: const Icon(Icons.menu_book, size: 28), // Updated icon
-                    label: const Text('Explore Lessons'),
-                    style: ElevatedButton.styleFrom(
-                      backgroundColor: Colors.white,
-                      foregroundColor: Colors.deepPurple,
-                      padding: const EdgeInsets.symmetric(horizontal: 30, vertical: 18),
-                      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(30)), // More rounded
-                      textStyle: TextStyle(
-                        fontSize: size.width * 0.04, // Responsive font size
-                        fontWeight: FontWeight.bold,
-                      ),
-                      elevation: 8, // Add shadow
-                      shadowColor: Colors.black54,
                     ),
                   ),
                 ),
-                const SizedBox(height: 20),
+                const SizedBox(height: 50), // Increased spacing
 
-                SizedBox(
-                  width: size.width * 0.7, // Responsive button width
-                  child: ElevatedButton.icon(
-                    onPressed: () {
-                      // UPDATED: Navigate to SyncStatusScreen
-                      Navigator.push(
-                        context,
-                        MaterialPageRoute(builder: (context) => const SyncStatusScreen()),
-                      );
-                    },
-                    icon: const Icon(Icons.sync_alt, size: 28), // Updated icon
-                    label: const Text('View Sync Status'),
-                    style: ElevatedButton.styleFrom(
-                      backgroundColor: Colors.tealAccent,
-                      foregroundColor: Colors.teal.shade900,
-                      padding: const EdgeInsets.symmetric(horizontal: 30, vertical: 18),
-                      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(30)),
-                      textStyle: TextStyle(
-                        fontSize: size.width * 0.04, // Responsive font size
-                        fontWeight: FontWeight.bold,
-                      ),
-                      elevation: 8,
-                      shadowColor: Colors.black54,
+                FadeTransition(
+                  opacity: _fadeAnimation,
+                  child: Text(
+                    'Welcome, ${_currentUser?.username ?? 'Learner'}!', // CORRECTED: Removed .user
+                    style: TextStyle(
+                      fontSize: size.width * 0.08, // Even larger font for welcome
+                      fontWeight: FontWeight.bold,
+                      color: Colors.white,
+                      shadows: const [
+                        Shadow(
+                          blurRadius: 15.0, // More blur for shadow
+                          color: Colors.black87,
+                          offset: Offset(3.0, 3.0),
+                        ),
+                      ],
                     ),
+                    textAlign: TextAlign.center,
                   ),
                 ),
-                const SizedBox(height: 40),
+                const SizedBox(height: 20), // Increased spacing
 
-                // Teacher Dashboard Button
-                SizedBox(
-                  width: size.width * 0.7, // Responsive button width
-                  child: ElevatedButton.icon(
-                    onPressed: () {
-                      // Navigate to the Teacher Dashboard
-                      Navigator.push(
-                        context,
-                        MaterialPageRoute(builder: (context) => const TeacherDashboardScreen()),
-                      );
-                    },
-                    icon: const Icon(Icons.school, size: 28), // Icon for teacher dashboard
-                    label: const Text('Teacher Dashboard'),
-                    style: ElevatedButton.styleFrom(
-                      backgroundColor: Colors.teal.shade700, // Different color for distinction
-                      foregroundColor: Colors.white,
-                      padding: const EdgeInsets.symmetric(horizontal: 30, vertical: 18),
-                      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(15)),
-                      textStyle: const TextStyle(fontSize: 20, fontWeight: FontWeight.bold),
-                      elevation: 8,
-                      shadowColor: Colors.black.withOpacity(0.5),
+                FadeTransition(
+                  opacity: _fadeAnimation,
+                  child: Text(
+                    'Your personalized learning journey awaits!',
+                    style: TextStyle(
+                      fontSize: size.width * 0.045, // Slightly larger
+                      color: Colors.white, // Pure white
+                      fontStyle: FontStyle.italic,
+                      fontWeight: FontWeight.w300, // Lighter weight
                     ),
+                    textAlign: TextAlign.center,
                   ),
+                ),
+                const SizedBox(height: 70), // Even more spacing
+
+                _buildHomeButton(
+                  context,
+                  'Explore Lessons',
+                  Icons.menu_book_rounded,
+                  const LessonsScreen(),
+                  Colors.white,
+                  Colors.deepPurple.shade800, // Darker purple for text
+                ),
+                const SizedBox(height: 25), // Increased spacing
+
+                _buildHomeButton(
+                  context,
+                  'View Sync Status',
+                  Icons.sync_alt_rounded,
+                  const SyncStatusScreen(),
+                  Colors.tealAccent.shade700, // Even brighter teal
+                  Colors.teal.shade900, // Darker teal for text
+                ),
+                const SizedBox(height: 50), // Increased spacing
+
+                _buildHomeButton(
+                  context,
+                  'Teacher Dashboard (Flutter)',
+                  Icons.school_rounded,
+                  const TeacherDashboardScreen(),
+                  Colors.indigo.shade800, // Even darker indigo
+                  Colors.white,
                 ),
               ],
             ),
           ),
+        ),
+      ),
+    );
+  }
+
+  Widget _buildHomeButton(BuildContext context, String label, IconData icon, Widget screen, Color bgColor, Color fgColor) {
+    final size = MediaQuery.of(context).size;
+    return SizedBox(
+      width: size.width * 0.85, // Even wider buttons
+      child: ElevatedButton.icon(
+        onPressed: () {
+          Navigator.push(
+            context,
+            MaterialPageRoute(builder: (context) => screen),
+          );
+        },
+        icon: Icon(icon, size: 35), // Even larger icon
+        label: Text(label),
+        style: ElevatedButton.styleFrom(
+          backgroundColor: bgColor,
+          foregroundColor: fgColor,
+          padding: const EdgeInsets.symmetric(horizontal: 35, vertical: 22), // Even larger padding
+          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(35)), // Even more rounded
+          textStyle: TextStyle(
+            fontSize: size.width * 0.05, // Even larger text
+            fontWeight: FontWeight.bold,
+          ),
+          elevation: 12, // More shadow
+          shadowColor: Colors.black.withOpacity(0.6),
         ),
       ),
     );

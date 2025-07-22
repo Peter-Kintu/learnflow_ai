@@ -1,10 +1,9 @@
 // learnflow_ai/flutter_app/lib/main.dart
 
 import 'package:flutter/material.dart';
-import 'package:learnflow_ai/screens/home_screen.dart';
+import 'package:learnflow_ai/screens/home_screen.dart'; // Ensure HomeScreen is imported
 import 'package:learnflow_ai/services/api_service.dart';
-import 'package:learnflow_ai/services/database_service.dart';
-import 'package:shared_preferences/shared_preferences.dart'; // Import for SharedPreferences
+import 'package:learnflow_ai/services/database_service.dart'; // Import DatabaseService
 
 // Conditional import for sqflite_common_ffi for web/desktop
 import 'dart:io' show Platform;
@@ -16,7 +15,7 @@ import 'package:sqflite_common_ffi_web/sqflite_ffi_web.dart' as sqflite_ffi_web;
 
 
 void main() async {
-  WidgetsFlutterBinding.ensureInitialized();
+  WidgetsFlutterBinding.ensureInitialized(); // Required for async operations before runApp
 
   // Initialize sqflite for the correct platform
   if (kIsWeb) {
@@ -25,7 +24,7 @@ void main() async {
     print('main(): sqflite_common_ffi_web initialized.');
   } else if (Platform.isWindows || Platform.isLinux || Platform.isMacOS) {
     print('main(): Running on Desktop. Initializing sqflite_common_ffi...');
-    sqfliteFfiInit();
+    sqfliteFfiInit(); // Initialize FFI for desktop
     databaseFactory = databaseFactoryFfi;
     print('main(): sqflite_common_ffi initialized.');
   } else {
@@ -33,12 +32,9 @@ void main() async {
     // Default sqflite for mobile platforms
   }
 
-  // Initialize ApiService and wait for its async initialization to complete
-  print('main(): Initializing ApiService...');
-  final apiService = ApiService(); // Create instance
-  await apiService.init(); // Await the async initialization
-  print('main(): ApiService initialized.');
-
+  // ApiService is now initialized in its constructor, which loads the token.
+  // No explicit 'init()' call is needed here anymore.
+  final ApiService apiService = ApiService(); // Create instance
 
   // Initialize DatabaseService
   print('main(): Initializing DatabaseService...');
@@ -47,69 +43,74 @@ void main() async {
   await databaseService.database; // Accessing the getter ensures initialization
   print('main(): DatabaseService initialized successfully.');
 
+  // IMPORTANT FOR HACKATHON DEMO:
+  // We are directly navigating to HomeScreen, bypassing authentication.
+  // In a real app, you would check authentication status here and navigate conditionally.
+  print('main(): Bypassing authentication for hackathon demo. Directly navigating to HomeScreen.');
 
-  print('main(): runApp called.');
   runApp(const MyApp());
 }
 
-class MyApp extends StatefulWidget {
-  const MyApp({super.key});
-
-  @override
-  State<MyApp> createState() => _MyAppState();
-}
-
-class _MyAppState extends State<MyApp> {
-  // We are directly navigating to HomeScreen for hackathon demo purposes
-  // In a real app, you would check authentication status here.
-  @override
-  void initState() {
-    super.initState();
-    // Bypassing authentication as we are directly going to HomeScreen
-    print('MyApp initState: Bypassing authentication and directly navigating to HomeScreen.');
-  }
+class MyApp extends StatelessWidget {
+  const MyApp({super.key}); // Removed isLoggedIn as it's no longer used for initial route decision
 
   @override
   Widget build(BuildContext context) {
-    print('MyApp build: Directly rendering HomeScreen.');
+    print('MyApp build: Directly rendering HomeScreen for demo.');
     return MaterialApp(
       title: 'LearnFlow AI',
+      debugShowCheckedModeBanner: false, // Hide the debug banner
       theme: ThemeData(
-        primarySwatch: Colors.deepPurple,
-        visualDensity: VisualDensity.adaptivePlatformDensity,
-        fontFamily: 'Inter',
+        // Define a primary color swatch for consistent theming
+        primarySwatch: Colors.deepPurple, // Sets the primary color and generates shades
+        primaryColor: Colors.deepPurple.shade800, // Explicit primary color
+        hintColor: Colors.purpleAccent.shade400, // Accent color for hints/focus
+        scaffoldBackgroundColor: Colors.white, // Default background for scaffolds
+        appBarTheme: AppBarTheme(
+          backgroundColor: Colors.deepPurple.shade900, // Consistent app bar color
+          foregroundColor: Colors.white,
+          centerTitle: true,
+          elevation: 0, // No shadow for app bars
+          titleTextStyle: const TextStyle(
+            color: Colors.white,
+            fontSize: 22,
+            fontWeight: FontWeight.bold,
+          ),
+        ),
+        buttonTheme: ButtonThemeData(
+          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(15)),
+          buttonColor: Colors.deepPurpleAccent.shade700,
+          textTheme: ButtonTextTheme.primary,
+        ),
+        cardTheme: CardTheme(
+          elevation: 8,
+          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
+          color: Colors.white,
+          shadowColor: Colors.black.withOpacity(0.3),
+        ),
+        inputDecorationTheme: InputDecorationTheme(
+          filled: true,
+          fillColor: Colors.deepPurple.shade50.withOpacity(0.8),
+          border: OutlineInputBorder(
+            borderRadius: BorderRadius.circular(18),
+            borderSide: BorderSide.none,
+          ),
+          enabledBorder: OutlineInputBorder(
+            borderRadius: BorderRadius.circular(18),
+            borderSide: BorderSide(color: Colors.deepPurple.shade300, width: 1.5),
+          ),
+          focusedBorder: OutlineInputBorder(
+            borderRadius: BorderRadius.circular(18),
+            borderSide: BorderSide(color: Colors.deepPurple.shade800, width: 3),
+          ),
+          labelStyle: TextStyle(color: Colors.deepPurple.shade800, fontWeight: FontWeight.w600),
+          hintStyle: TextStyle(color: Colors.grey.shade600),
+          contentPadding: const EdgeInsets.symmetric(vertical: 18, horizontal: 15),
+        ),
+        // Add more theme properties as needed for consistency
       ),
       // Directly set home to HomeScreen to bypass authentication for hackathon
       home: const HomeScreen(),
-      debugShowCheckedModeBanner: false,
-    );
-  }
-}
-
-// SplashScreen is no longer used as we directly go to HomeScreen
-class SplashScreen extends StatelessWidget {
-  const SplashScreen({super.key});
-
-  @override
-  Widget build(BuildContext context) {
-    print('SplashScreen build: This should not be seen if direct navigation is working.');
-    return const Scaffold(
-      backgroundColor: Colors.red,
-      body: SizedBox.expand(
-        child: Center(
-          child: Column(
-            mainAxisAlignment: MainAxisAlignment.center,
-            children: [
-              CircularProgressIndicator(color: Colors.white),
-              SizedBox(height: 20),
-              Text(
-                'Loading LearnFlow AI...',
-                style: TextStyle(fontSize: 20, color: Colors.white),
-              ),
-            ],
-          ),
-        ),
-      ),
     );
   }
 }

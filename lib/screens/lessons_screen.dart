@@ -3,8 +3,10 @@
 import 'package:flutter/material.dart';
 import 'package:learnflow_ai/models/lesson.dart';
 import 'package:learnflow_ai/services/api_service.dart';
-import 'package:learnflow_ai/services/database_service.dart'; // ADDED: Import DatabaseService
-import 'package:learnflow_ai/screens/lesson_detail_screen.dart'; // Ensure this is imported
+import 'package:learnflow_ai/services/database_service.dart';
+import 'package:learnflow_ai/screens/lesson_detail_screen.dart';
+import 'package:learnflow_ai/models/user.dart';
+import 'package:url_launcher/url_launcher.dart';
 
 class LessonsScreen extends StatefulWidget {
   const LessonsScreen({super.key});
@@ -15,25 +17,31 @@ class LessonsScreen extends StatefulWidget {
 
 class _LessonsScreenState extends State<LessonsScreen> {
   final ApiService _apiService = ApiService();
-  final DatabaseService _databaseService = DatabaseService.instance; // Get singleton instance
+  final DatabaseService _databaseService = DatabaseService.instance;
   List<Lesson> _lessons = [];
   bool _isLoading = true;
   String? _errorMessage;
+  User? _currentUser;
 
   @override
   void initState() {
     super.initState();
-    _loadLessons(); // Call a new method to handle both local and API fetching
+    _loadLessonsAndUser();
   }
 
-  Future<void> _loadLessons() async {
+  Future<void> _loadLessonsAndUser() async {
     setState(() {
       _isLoading = true;
       _errorMessage = null;
     });
 
     try {
-      // 1. Try to load from local database first
+      final user = await _apiService.fetchCurrentUser();
+      setState(() {
+        _currentUser = user;
+      });
+      print('LessonsScreen: Fetched current user: ${_currentUser?.username}, isStaff: ${_currentUser?.isStaff}');
+
       print('LessonsScreen: Attempting to load lessons from local database...');
       List<Lesson> localLessons = await _databaseService.getAllLessons();
 
@@ -43,19 +51,17 @@ class _LessonsScreenState extends State<LessonsScreen> {
           _isLoading = false;
         });
         print('LessonsScreen: Loaded ${localLessons.length} lessons from local database.');
-        // Optionally, fetch from API in background to update local data
         _fetchLessonsFromApi(backgroundSync: true);
       } else {
-        // 2. If no local data, fetch from API
         print('LessonsScreen: No local lessons found. Fetching from API...');
         await _fetchLessonsFromApi(backgroundSync: false);
       }
     } catch (e) {
       setState(() {
-        _errorMessage = 'Failed to load lessons: $e';
+        _errorMessage = 'Failed to load data: $e';
         _isLoading = false;
       });
-      print('LessonsScreen: Error loading lessons (local or API): $e');
+      print('LessonsScreen: Error loading lessons or user data: $e');
     }
   }
 
@@ -65,14 +71,13 @@ class _LessonsScreenState extends State<LessonsScreen> {
       if (fetchedLessons.isNotEmpty) {
         setState(() {
           _lessons = fetchedLessons;
-          if (!backgroundSync) _isLoading = false; // Only set loading to false if it's the primary fetch
+          if (!backgroundSync) _isLoading = false;
         });
         print('LessonsScreen: Fetched ${fetchedLessons.length} lessons from API.');
 
-        // 3. Save/update lessons in local database
         print('LessonsScreen: Saving/updating lessons to local database...');
         for (var lesson in fetchedLessons) {
-          await _databaseService.insertLesson(lesson); // insert or replace
+          await _databaseService.insertLesson(lesson);
         }
         print('LessonsScreen: Lessons saved/updated locally.');
       } else {
@@ -95,19 +100,54 @@ class _LessonsScreenState extends State<LessonsScreen> {
     }
   }
 
+  Future<void> _launchDjangoTeacherDashboardUrl({bool downloadPdf = false}) async {
+    String url = 'http://localhost:8000/api/teacher-dashboard/';
+    if (downloadPdf) {
+      url += '?format=pdf';
+    }
+    final uri = Uri.parse(url);
+    if (await canLaunchUrl(uri)) {
+      await launchUrl(uri, mode: LaunchMode.externalApplication);
+    } else {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('Could not open/download the teacher dashboard. Please ensure the Django server is running and accessible: $url')),
+      );
+    }
+  }
+
   @override
   Widget build(BuildContext context) {
     return Scaffold(
       appBar: AppBar(
         title: const Text('Lessons'),
-        backgroundColor: Colors.deepPurple,
+        backgroundColor: Colors.deepPurple.shade900, // Even darker purple for app bar
         foregroundColor: Colors.white,
         centerTitle: true,
+        elevation: 0,
+        actions: [
+          if (_currentUser != null && _currentUser!.isStaff)
+            IconButton(
+              icon: const Icon(Icons.web_asset_rounded, size: 30), // Larger, rounded icon
+              tooltip: 'Go to Teacher Dashboard (Web)',
+              onPressed: () => _launchDjangoTeacherDashboardUrl(downloadPdf: false),
+            ),
+          if (_currentUser != null)
+            IconButton(
+              icon: const Icon(Icons.download_rounded, size: 30), // Larger, rounded icon
+              tooltip: 'Download Teacher Report (PDF)',
+              onPressed: () => _launchDjangoTeacherDashboardUrl(downloadPdf: true),
+            ),
+          IconButton(
+            icon: const Icon(Icons.refresh_rounded, size: 30), // Larger, rounded icon
+            tooltip: 'Refresh Lessons',
+            onPressed: _loadLessonsAndUser,
+          ),
+        ],
       ),
       body: Container(
         decoration: BoxDecoration(
           gradient: LinearGradient(
-            colors: [Colors.deepPurple.shade700, Colors.purpleAccent.shade400],
+            colors: [Colors.deepPurple.shade900, Colors.indigo.shade800, Colors.purple.shade700], // Deeper, richer gradient
             begin: Alignment.topCenter,
             end: Alignment.bottomCenter,
           ),
@@ -119,10 +159,10 @@ class _LessonsScreenState extends State<LessonsScreen> {
             : _errorMessage != null
                 ? Center(
                     child: Padding(
-                      padding: const EdgeInsets.all(24.0),
+                      padding: const EdgeInsets.all(28.0), // Increased padding
                       child: Text(
                         _errorMessage!,
-                        style: const TextStyle(color: Colors.redAccent, fontSize: 18),
+                        style: const TextStyle(color: Colors.redAccent, fontSize: 19, fontWeight: FontWeight.bold), // Bolder, larger error
                         textAlign: TextAlign.center,
                       ),
                     ),
@@ -132,36 +172,41 @@ class _LessonsScreenState extends State<LessonsScreen> {
                         child: Column(
                           mainAxisAlignment: MainAxisAlignment.center,
                           children: [
-                            Icon(Icons.library_books, size: 80, color: Colors.white70),
-                            SizedBox(height: 20),
-                            Text(
+                            const Icon(Icons.library_books_rounded, size: 100, color: Colors.white70), // Larger, rounded icon
+                            const SizedBox(height: 25), // Increased spacing
+                            const Text(
                               'No lessons available yet. Check back later!',
-                              style: TextStyle(fontSize: 18, color: Colors.white70),
+                              style: TextStyle(fontSize: 20, color: Colors.white70, fontWeight: FontWeight.w500), // Larger, medium weight
                               textAlign: TextAlign.center,
                             ),
-                            SizedBox(height: 20),
+                            const SizedBox(height: 25),
                             ElevatedButton.icon(
-                              onPressed: _loadLessons, // Allows retrying fetch
-                              icon: Icon(Icons.refresh),
-                              label: Text('Refresh Lessons'),
+                              onPressed: _loadLessonsAndUser,
+                              icon: const Icon(Icons.refresh_rounded, size: 28), // Larger, rounded icon
+                              label: const Text('Refresh Lessons'),
                               style: ElevatedButton.styleFrom(
-                                backgroundColor: Colors.purple,
+                                backgroundColor: Colors.deepPurpleAccent.shade700, // More vibrant purple
                                 foregroundColor: Colors.white,
+                                padding: const EdgeInsets.symmetric(horizontal: 40, vertical: 18), // Larger button
+                                shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)), // More rounded
+                                elevation: 10,
+                                shadowColor: Colors.deepPurple.shade900.withOpacity(0.7),
+                                textStyle: const TextStyle(fontSize: 18, fontWeight: FontWeight.bold),
                               ),
                             ),
                           ],
                         ),
                       )
                     : ListView.builder(
-                        padding: const EdgeInsets.all(16.0),
+                        padding: const EdgeInsets.all(25.0), // Increased padding
                         itemCount: _lessons.length,
                         itemBuilder: (context, index) {
                           final lesson = _lessons[index];
                           return Card(
-                            margin: const EdgeInsets.symmetric(vertical: 10),
-                            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(15)),
-                            elevation: 8,
-                            shadowColor: Colors.black.withOpacity(0.4),
+                            margin: const EdgeInsets.symmetric(vertical: 15), // Increased vertical margin
+                            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(25)), // Even more rounded
+                            elevation: 12, // More shadow
+                            shadowColor: Colors.black.withOpacity(0.5),
                             child: InkWell(
                               onTap: () {
                                 Navigator.push(
@@ -171,37 +216,37 @@ class _LessonsScreenState extends State<LessonsScreen> {
                                   ),
                                 );
                               },
-                              borderRadius: BorderRadius.circular(15),
+                              borderRadius: BorderRadius.circular(25), // Match card border radius
                               child: Padding(
-                                padding: const EdgeInsets.all(20.0),
+                                padding: const EdgeInsets.all(30.0), // Increased padding
                                 child: Column(
                                   crossAxisAlignment: CrossAxisAlignment.start,
                                   children: [
                                     Text(
                                       lesson.title,
-                                      style: const TextStyle(
-                                        fontSize: 22,
+                                      style: TextStyle(
+                                        fontSize: 26, // Larger font
                                         fontWeight: FontWeight.bold,
-                                        color: Colors.deepPurple,
+                                        color: Colors.deepPurple.shade800, // Darker purple
                                       ),
                                     ),
-                                    const SizedBox(height: 10),
+                                    const SizedBox(height: 15), // Increased spacing
                                     Text(
                                       lesson.description ?? 'No description available.',
                                       style: TextStyle(
-                                        fontSize: 15,
-                                        color: Colors.grey.shade700,
+                                        fontSize: 17, // Larger font
+                                        color: Colors.grey.shade900, // Even darker grey
                                       ),
-                                      maxLines: 2,
+                                      maxLines: 4, // Allow more lines
                                       overflow: TextOverflow.ellipsis,
                                     ),
-                                    const SizedBox(height: 15),
+                                    const SizedBox(height: 25), // Increased spacing
                                     Row(
-                                      mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                                      mainAxisAlignment: MainAxisAlignment.spaceAround,
                                       children: [
-                                        _buildInfoChip(Icons.subject, lesson.subject ?? 'N/A', Colors.blueGrey),
-                                        _buildInfoChip(Icons.bar_chart, lesson.difficultyLevel ?? 'N/A', Colors.orange),
-                                        _buildInfoChip(Icons.numbers, 'v${lesson.version}', Colors.green),
+                                        _buildInfoChip(Icons.subject_rounded, lesson.subject ?? 'N/A', Colors.blueGrey.shade700),
+                                        _buildInfoChip(Icons.bar_chart_rounded, lesson.difficultyLevel ?? 'N/A', Colors.orange.shade700),
+                                        _buildInfoChip(Icons.numbers_rounded, 'v${lesson.version}', Colors.green.shade700),
                                       ],
                                     ),
                                   ],
@@ -217,16 +262,15 @@ class _LessonsScreenState extends State<LessonsScreen> {
 
   Widget _buildInfoChip(IconData icon, String text, Color color) {
     return Chip(
-      avatar: Icon(icon, size: 18, color: color),
+      avatar: Icon(icon, size: 22, color: color), // Larger icon
       label: Text(
         text,
-        style: TextStyle(color: color, fontWeight: FontWeight.bold),
+        style: TextStyle(color: color, fontWeight: FontWeight.bold, fontSize: 15), // Slightly larger text
       ),
-      backgroundColor: color.withOpacity(0.1),
-      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
-      side: BorderSide(color: color.withOpacity(0.5), width: 1),
-      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+      backgroundColor: color.withOpacity(0.2), // More opaque background
+      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)), // More rounded
+      side: BorderSide(color: color.withOpacity(0.7), width: 2), // Thicker, clearer border
+      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8), // More padding
     );
   }
 }
-// This code is part of the LearnFlow AI Flutter application, which provides a lessons screen

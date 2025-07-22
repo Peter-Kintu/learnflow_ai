@@ -2,7 +2,7 @@
 
 import 'package:flutter/material.dart';
 import 'package:learnflow_ai/screens/add_lesson_screen.dart';
-import 'package:learnflow_ai/screens/add_question_screen.dart'; // ADDED: Import the new screen
+import 'package:learnflow_ai/screens/add_question_screen.dart';
 
 class TeacherDashboardScreen extends StatelessWidget {
   const TeacherDashboardScreen({super.key});
@@ -12,14 +12,15 @@ class TeacherDashboardScreen extends StatelessWidget {
     return Scaffold(
       appBar: AppBar(
         title: const Text('Teacher Dashboard'),
-        backgroundColor: Colors.deepPurple,
+        backgroundColor: Colors.deepPurple.shade900, // Even darker purple for app bar
         foregroundColor: Colors.white,
         centerTitle: true,
+        elevation: 0,
       ),
       body: Container(
         decoration: BoxDecoration(
           gradient: LinearGradient(
-            colors: [Colors.deepPurple.shade700, Colors.purpleAccent.shade400],
+            colors: [Colors.deepPurple.shade900, Colors.indigo.shade800, Colors.purple.shade700], // Deeper, richer gradient
             begin: Alignment.topCenter,
             end: Alignment.bottomCenter,
           ),
@@ -29,59 +30,61 @@ class TeacherDashboardScreen extends StatelessWidget {
             mainAxisAlignment: MainAxisAlignment.center,
             children: [
               Text(
-                'Welcome, Teacher!',
+                'Welcome, Educator!', // More formal welcome
                 style: TextStyle(
-                  fontSize: 32,
+                  fontSize: 40, // Even larger font
                   fontWeight: FontWeight.bold,
                   color: Colors.white,
                   shadows: [
-                    Shadow(blurRadius: 5.0, color: Colors.black38, offset: Offset(1.0, 1.0)),
+                    Shadow(blurRadius: 15.0, color: Colors.black87, offset: Offset(3.0, 3.0)), // More prominent shadow
                   ],
                 ),
+                textAlign: TextAlign.center,
               ),
-              const SizedBox(height: 40),
-              ElevatedButton.icon(
-                onPressed: () {
-                  Navigator.push(
-                    context,
-                    MaterialPageRoute(builder: (context) => const AddLessonScreen()),
-                  );
-                },
-                icon: const Icon(Icons.add_box, size: 28),
-                label: const Text('Add New Lesson'),
-                style: ElevatedButton.styleFrom(
-                  backgroundColor: Colors.amber.shade700,
-                  foregroundColor: Colors.white,
-                  padding: const EdgeInsets.symmetric(horizontal: 30, vertical: 18),
-                  shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(15)),
-                  textStyle: const TextStyle(fontSize: 20, fontWeight: FontWeight.bold),
-                  elevation: 8,
-                  shadowColor: Colors.black.withOpacity(0.5),
-                ),
+              const SizedBox(height: 60), // Increased spacing
+              _buildDashboardButton(
+                context,
+                'Add New Lesson',
+                Icons.add_box_rounded,
+                const AddLessonScreen(),
+                Colors.amber.shade700, // Richer amber
               ),
-              const SizedBox(height: 20),
-              ElevatedButton.icon(
-                onPressed: () {
-                  // UPDATED: Navigate to AddQuestionScreen
-                  Navigator.push(
-                    context,
-                    MaterialPageRoute(builder: (context) => const AddQuestionScreen()),
-                  );
-                },
-                icon: const Icon(Icons.quiz, size: 28),
-                label: const Text('Add New Question'),
-                style: ElevatedButton.styleFrom(
-                  backgroundColor: Colors.teal.shade700,
-                  foregroundColor: Colors.white,
-                  padding: const EdgeInsets.symmetric(horizontal: 30, vertical: 18),
-                  shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(15)),
-                  textStyle: const TextStyle(fontSize: 20, fontWeight: FontWeight.bold),
-                  elevation: 8,
-                  shadowColor: Colors.black.withOpacity(0.5),
-                ),
+              const SizedBox(height: 30), // Increased spacing
+              _buildDashboardButton(
+                context,
+                'Add New Question',
+                Icons.quiz_rounded,
+                const AddQuestionScreen(),
+                Colors.teal.shade700, // Richer teal
               ),
             ],
           ),
+        ),
+      ),
+    );
+  }
+
+  Widget _buildDashboardButton(BuildContext context, String label, IconData icon, Widget screen, Color bgColor) {
+    final size = MediaQuery.of(context).size;
+    return SizedBox(
+      width: size.width * 0.85, // Even wider buttons
+      child: ElevatedButton.icon(
+        onPressed: () {
+          Navigator.push(
+            context,
+            MaterialPageRoute(builder: (context) => screen),
+          );
+        },
+        icon: Icon(icon, size: 35), // Even larger icon
+        label: Text(label),
+        style: ElevatedButton.styleFrom(
+          backgroundColor: bgColor,
+          foregroundColor: Colors.white,
+          padding: const EdgeInsets.symmetric(horizontal: 35, vertical: 22), // Even larger padding
+          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)), // More rounded
+          textStyle: const TextStyle(fontSize: 22, fontWeight: FontWeight.bold), // Larger, bolder text
+          elevation: 12, // More shadow
+          shadowColor: Colors.black.withOpacity(0.7),
         ),
       ),
     );

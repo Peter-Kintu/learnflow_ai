@@ -3,7 +3,7 @@
 import 'package:flutter/material.dart';
 import 'package:learnflow_ai/models/quiz_attempt.dart';
 import 'package:learnflow_ai/services/database_service.dart';
-import 'package:learnflow_ai/services/api_service.dart'; // Will be used for actual sync later
+import 'package:learnflow_ai/services/api_service.dart';
 
 class SyncStatusScreen extends StatefulWidget {
   const SyncStatusScreen({super.key});
@@ -18,7 +18,7 @@ class _SyncStatusScreenState extends State<SyncStatusScreen> {
   List<QuizAttempt> _pendingAttempts = [];
   bool _isLoading = true;
   String? _errorMessage;
-  bool _isSyncing = false; // New state to manage sync button loading
+  bool _isSyncing = false;
 
   @override
   void initState() {
@@ -48,11 +48,11 @@ class _SyncStatusScreenState extends State<SyncStatusScreen> {
   }
 
   Future<void> _syncData() async {
-    if (_isSyncing) return; // Prevent multiple syncs simultaneously
+    if (_isSyncing) return;
 
     setState(() {
       _isSyncing = true;
-      _errorMessage = null; // Clear previous errors
+      _errorMessage = null;
     });
 
     if (_pendingAttempts.isEmpty) {
@@ -69,11 +69,7 @@ class _SyncStatusScreenState extends State<SyncStatusScreen> {
 
       if (result['success']) {
         print('SyncStatusScreen: Quiz attempts uploaded successfully. Updating local status...');
-        // Update local database for successfully synced attempts
         for (var attempt in _pendingAttempts) {
-          // Assuming Django returns the UUIDs of successfully processed attempts
-          // For simplicity, we'll mark all as SYNCED if the overall call was successful.
-          // In a real app, you might parse `result['data']` for granular success/failure.
           await _databaseService.updateQuizAttempt(attempt.copyWith(
             syncedAt: DateTime.now(),
             syncStatus: 'SYNCED',
@@ -100,7 +96,6 @@ class _SyncStatusScreenState extends State<SyncStatusScreen> {
       setState(() {
         _isSyncing = false;
       });
-      // Re-fetch pending attempts to update the UI
       await _fetchPendingAttempts();
     }
   }
@@ -110,14 +105,15 @@ class _SyncStatusScreenState extends State<SyncStatusScreen> {
     return Scaffold(
       appBar: AppBar(
         title: const Text('Sync Status'),
-        backgroundColor: Colors.deepPurple,
+        backgroundColor: Colors.deepPurple.shade900, // Even darker purple for app bar
         foregroundColor: Colors.white,
         centerTitle: true,
+        elevation: 0,
       ),
       body: Container(
         decoration: BoxDecoration(
           gradient: LinearGradient(
-            colors: [Colors.deepPurple.shade700, Colors.purpleAccent.shade400],
+            colors: [Colors.deepPurple.shade900, Colors.indigo.shade800, Colors.purple.shade700], // Deeper, richer gradient
             begin: Alignment.topCenter,
             end: Alignment.bottomCenter,
           ),
@@ -125,30 +121,30 @@ class _SyncStatusScreenState extends State<SyncStatusScreen> {
         child: Column(
           children: [
             Padding(
-              padding: const EdgeInsets.all(16.0),
+              padding: const EdgeInsets.all(28.0), // Increased padding
               child: _isSyncing
                   ? const CircularProgressIndicator(color: Colors.white)
                   : ElevatedButton.icon(
                       onPressed: _syncData,
-                      icon: const Icon(Icons.cloud_upload, size: 28),
+                      icon: const Icon(Icons.cloud_upload_rounded, size: 30), // Larger, rounded icon
                       label: const Text('Sync Now'),
                       style: ElevatedButton.styleFrom(
-                        backgroundColor: Colors.green.shade700,
+                        backgroundColor: Colors.green.shade700, // Richer green
                         foregroundColor: Colors.white,
-                        padding: const EdgeInsets.symmetric(horizontal: 30, vertical: 15),
-                        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(15)),
-                        textStyle: const TextStyle(fontSize: 18, fontWeight: FontWeight.bold),
-                        elevation: 8,
-                        shadowColor: Colors.black.withOpacity(0.5),
+                        padding: const EdgeInsets.symmetric(horizontal: 50, vertical: 20), // Larger button
+                        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)), // More rounded
+                        textStyle: const TextStyle(fontSize: 22, fontWeight: FontWeight.bold), // Larger, bolder text
+                        elevation: 12, // More shadow
+                        shadowColor: Colors.black.withOpacity(0.7),
                       ),
                     ),
             ),
             if (_errorMessage != null)
               Padding(
-                padding: const EdgeInsets.symmetric(horizontal: 16.0, vertical: 8.0),
+                padding: const EdgeInsets.symmetric(horizontal: 28.0, vertical: 15.0), // Increased padding
                 child: Text(
                   _errorMessage!,
-                  style: const TextStyle(color: Colors.redAccent, fontSize: 16),
+                  style: const TextStyle(color: Colors.redAccent, fontSize: 17, fontWeight: FontWeight.w700), // Bolder, larger error text
                   textAlign: TextAlign.center,
                 ),
               ),
@@ -162,42 +158,50 @@ class _SyncStatusScreenState extends State<SyncStatusScreen> {
                           child: Column(
                             mainAxisAlignment: MainAxisAlignment.center,
                             children: [
-                              Icon(Icons.check_circle_outline, size: 80, color: Colors.white70),
-                              SizedBox(height: 20),
+                              Icon(Icons.check_circle_outline_rounded, size: 120, color: Colors.green.shade400), // Even larger, rounded, brighter green icon
+                              SizedBox(height: 30), // Increased spacing
                               Text(
                                 'All data synced! No pending items.',
-                                style: TextStyle(fontSize: 18, color: Colors.white70),
+                                style: TextStyle(
+                                  fontSize: 24, // Even larger font
+                                  fontWeight: FontWeight.bold,
+                                  color: Colors.white,
+                                  shadows: [
+                                    Shadow(blurRadius: 10.0, color: Colors.black54, offset: Offset(2.0, 2.0)),
+                                  ],
+                                ),
                                 textAlign: TextAlign.center,
                               ),
                             ],
                           ),
                         )
                       : ListView.builder(
-                          padding: const EdgeInsets.all(16.0),
+                          padding: const EdgeInsets.all(25.0), // Increased padding
                           itemCount: _pendingAttempts.length,
                           itemBuilder: (context, index) {
                             final attempt = _pendingAttempts[index];
                             return Card(
-                              margin: const EdgeInsets.symmetric(vertical: 8),
-                              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
-                              elevation: 4,
+                              margin: const EdgeInsets.symmetric(vertical: 12), // Increased vertical margin
+                              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)), // More rounded
+                              elevation: 8, // More shadow
+                              shadowColor: Colors.black.withOpacity(0.4),
                               child: Padding(
-                                padding: const EdgeInsets.all(16.0),
+                                padding: const EdgeInsets.all(25.0), // Increased padding
                                 child: Column(
                                   crossAxisAlignment: CrossAxisAlignment.start,
                                   children: [
                                     Text(
                                       'Attempt UUID: ${attempt.uuid.substring(0, 8)}...',
-                                      style: TextStyle(fontWeight: FontWeight.bold, fontSize: 16),
+                                      style: TextStyle(fontWeight: FontWeight.bold, fontSize: 18, color: Colors.deepPurple.shade800), // Bolder, larger, darker purple
                                     ),
-                                    SizedBox(height: 5),
-                                    Text('Question UUID: ${attempt.questionUuid.substring(0, 8)}...'),
-                                    Text('Submitted: "${attempt.submittedAnswer}"'),
-                                    Text('Correct: ${attempt.isCorrect ? 'Yes' : 'No'}'),
-                                    Text('Score: ${attempt.score.toStringAsFixed(1)}'),
-                                    Text('Feedback: ${attempt.aiFeedbackText ?? 'N/A'}'),
-                                    Text('Status: ${attempt.syncStatus}'),
-                                    Text('Timestamp: ${attempt.attemptTimestamp.toLocal().toString().split('.')[0]}'),
+                                    SizedBox(height: 10),
+                                    Text('Question UUID: ${attempt.questionUuid.substring(0, 8)}...', style: TextStyle(fontSize: 16, color: Colors.grey.shade900)),
+                                    Text('Submitted: "${attempt.submittedAnswer}"', style: TextStyle(fontSize: 16, color: Colors.grey.shade900)),
+                                    Text('Correct: ${attempt.isCorrect ? 'Yes' : 'No'}', style: TextStyle(fontSize: 16, color: Colors.grey.shade900)),
+                                    Text('Score: ${attempt.score.toStringAsFixed(1)}', style: TextStyle(fontSize: 16, color: Colors.grey.shade900)),
+                                    Text('Feedback: ${attempt.aiFeedbackText ?? 'N/A'}', style: TextStyle(fontSize: 16, color: Colors.grey.shade900)),
+                                    Text('Status: ${attempt.syncStatus}', style: TextStyle(fontSize: 16, color: Colors.grey.shade900)),
+                                    Text('Timestamp: ${attempt.attemptTimestamp.toLocal().toString().split('.')[0]}', style: TextStyle(fontSize: 16, color: Colors.grey.shade900)),
                                   ],
                                 ),
                               ),

@@ -89,106 +89,108 @@ class _AuthScreenState extends State<AuthScreen> {
   Widget build(BuildContext context) {
     print('AuthScreen build: Rendering. IsLogin: $_isLogin');
     return Scaffold(
-      backgroundColor: Colors.purple, // ANOTHER VERY OBVIOUS COLOR
-      appBar: AppBar(
-        title: Text(_isLogin ? 'Login to LearnFlow AI' : 'Register for LearnFlow AI'),
-        backgroundColor: Colors.deepPurple,
-        foregroundColor: Colors.white,
-      ),
-      body: SizedBox.expand( // Force it to take full screen
+      body: Container(
+        decoration: BoxDecoration(
+          gradient: LinearGradient(
+            colors: [Colors.deepPurple.shade900, Colors.indigo.shade800, Colors.purple.shade700], // Deeper, richer gradient
+            begin: Alignment.topCenter,
+            end: Alignment.bottomCenter,
+          ),
+        ),
         child: Center(
           child: SingleChildScrollView(
-            padding: const EdgeInsets.all(24.0),
+            padding: const EdgeInsets.all(36.0), // Even more padding
             child: Column(
               mainAxisAlignment: MainAxisAlignment.center,
               children: <Widget>[
-                // Temporarily removed Image.asset to rule out asset loading issues
-                const Icon(Icons.school, size: 120, color: Colors.white), // Placeholder icon
-                const SizedBox(height: 30),
-                Text(
-                  _isLogin ? 'Welcome Back!' : 'Join LearnFlow AI',
-                  style: const TextStyle(
-                    fontSize: 28,
-                    fontWeight: FontWeight.bold,
-                    color: Colors.white, // Changed text color for visibility
-                  ),
+                // Animated icon for a more dynamic feel
+                TweenAnimationBuilder<double>(
+                  tween: Tween<double>(begin: 0, end: 1),
+                  duration: const Duration(milliseconds: 1000), // Longer animation
+                  builder: (context, value, child) {
+                    return Transform.scale(
+                      scale: 0.7 + (0.3 * value), // Scale from 70% to 100%
+                      child: Opacity(
+                        opacity: value, // Fade in
+                        child: Container(
+                          padding: const EdgeInsets.all(30), // Larger padding
+                          decoration: BoxDecoration(
+                            color: Colors.white.withOpacity(0.25), // Slightly more opaque
+                            shape: BoxShape.circle,
+                            boxShadow: [
+                              BoxShadow(
+                                color: Colors.black.withOpacity(0.4), // Stronger shadow
+                                blurRadius: 20, // More blur
+                                offset: const Offset(0, 10), // More offset
+                              ),
+                            ],
+                          ),
+                          child: const Icon(Icons.school_rounded, size: 110, color: Colors.white), // Larger, rounded icon
+                        ),
+                      ),
+                    );
+                  },
                 ),
-                const SizedBox(height: 20),
+                const SizedBox(height: 50), // Increased spacing
+
+                Text(
+                  _isLogin ? 'Welcome Back, Learner!' : 'Embark on Your Journey!',
+                  style: const TextStyle(
+                    fontSize: 38, // Even larger font size
+                    fontWeight: FontWeight.bold,
+                    color: Colors.white,
+                    shadows: [
+                      Shadow(blurRadius: 15.0, color: Colors.black87, offset: Offset(3.0, 3.0)), // More prominent shadow
+                    ],
+                  ),
+                  textAlign: TextAlign.center,
+                ),
+                const SizedBox(height: 30), // Increased spacing
+
                 if (_errorMessage != null)
                   Padding(
-                    padding: const EdgeInsets.only(bottom: 16.0),
+                    padding: const EdgeInsets.only(bottom: 25.0), // Increased padding
                     child: Text(
                       _errorMessage!,
-                      style: const TextStyle(color: Colors.yellow, fontSize: 16), // Changed error color
+                      style: const TextStyle(
+                        color: Colors.redAccent, // Consistent error color
+                        fontSize: 17, // Slightly larger
+                        fontWeight: FontWeight.w700, // Bolder
+                      ),
                       textAlign: TextAlign.center,
                     ),
                   ),
-                TextField(
-                  controller: _usernameController,
-                  decoration: InputDecoration(
-                    labelText: 'Username',
-                    filled: true, // Make sure background is filled
-                    fillColor: Colors.white.withOpacity(0.9),
-                    border: OutlineInputBorder(borderRadius: BorderRadius.circular(10)),
-                    prefixIcon: const Icon(Icons.person),
-                  ),
-                ),
-                const SizedBox(height: 16),
-                if (!_isLogin)
-                  Column(
-                    children: [
-                      TextField(
-                        controller: _emailController,
-                        keyboardType: TextInputType.emailAddress,
-                        decoration: InputDecoration(
-                          labelText: 'Email (Optional)',
-                          filled: true,
-                          fillColor: Colors.white.withOpacity(0.9),
-                          border: OutlineInputBorder(borderRadius: BorderRadius.circular(10)),
-                          prefixIcon: const Icon(Icons.email),
-                        ),
-                      ),
-                      const SizedBox(height: 16),
-                      TextField(
-                        controller: _studentIdCodeController,
-                        decoration: InputDecoration(
-                          labelText: 'Student ID Code (Optional)',
-                          hintText: 'Provided by your teacher',
-                          filled: true,
-                          fillColor: Colors.white.withOpacity(0.9),
-                          border: OutlineInputBorder(borderRadius: BorderRadius.circular(10)),
-                          prefixIcon: const Icon(Icons.badge),
-                        ),
-                      ),
-                      const SizedBox(height: 16),
-                    ],
-                  ),
-                TextField(
-                  controller: _passwordController,
-                  obscureText: true,
-                  decoration: InputDecoration(
-                    labelText: 'Password',
-                    filled: true,
-                    fillColor: Colors.white.withOpacity(0.9),
-                    border: OutlineInputBorder(borderRadius: BorderRadius.circular(10)),
-                    prefixIcon: const Icon(Icons.lock),
-                  ),
-                ),
-                const SizedBox(height: 24),
+
+                // Text fields with enhanced styling
+                _buildAuthTextField(_usernameController, 'Username', Icons.person_rounded), // Rounded icon
+                const SizedBox(height: 25), // Increased spacing
+
+                if (!_isLogin) ...[
+                  _buildAuthTextField(_emailController, 'Email (Optional)', Icons.email_rounded, keyboardType: TextInputType.emailAddress), // Rounded icon
+                  const SizedBox(height: 25),
+                  _buildAuthTextField(_studentIdCodeController, 'Student ID Code (Optional)', Icons.badge_rounded, hintText: 'Provided by your teacher'), // Rounded icon
+                  const SizedBox(height: 25),
+                ],
+                _buildAuthTextField(_passwordController, 'Password', Icons.lock_rounded, obscureText: true), // Rounded icon
+                const SizedBox(height: 40), // Increased spacing
+
                 _isLoading
                     ? const CircularProgressIndicator(color: Colors.white)
                     : ElevatedButton(
                         onPressed: _isLogin ? _login : _register,
                         style: ElevatedButton.styleFrom(
-                          backgroundColor: Colors.deepPurple,
+                          backgroundColor: Colors.deepPurpleAccent.shade700, // More vibrant purple
                           foregroundColor: Colors.white,
-                          padding: const EdgeInsets.symmetric(horizontal: 50, vertical: 15),
-                          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
-                          textStyle: const TextStyle(fontSize: 18, fontWeight: FontWeight.bold),
+                          padding: const EdgeInsets.symmetric(horizontal: 70, vertical: 20), // Even larger button
+                          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)), // More rounded
+                          textStyle: const TextStyle(fontSize: 22, fontWeight: FontWeight.bold), // Larger, bolder text
+                          elevation: 12, // More shadow
+                          shadowColor: Colors.deepPurple.shade900.withOpacity(0.7),
                         ),
                         child: Text(_isLogin ? 'Login' : 'Register'),
                       ),
-                const SizedBox(height: 20),
+                const SizedBox(height: 30), // Increased spacing
+
                 TextButton(
                   onPressed: () {
                     setState(() {
@@ -199,13 +201,52 @@ class _AuthScreenState extends State<AuthScreen> {
                   },
                   child: Text(
                     _isLogin ? 'Don\'t have an account? Register' : 'Already have an account? Login',
-                    style: const TextStyle(color: Colors.white), // Changed text color for visibility
+                    style: const TextStyle(
+                      color: Colors.white, // Pure white for better visibility
+                      fontSize: 17, // Slightly larger
+                      fontWeight: FontWeight.w500,
+                      decoration: TextDecoration.underline,
+                      decorationColor: Colors.white,
+                      decorationThickness: 1.5, // Thicker underline
+                    ),
                   ),
                 ),
               ],
             ),
           ),
         ),
+      ),
+    );
+  }
+
+  // Helper method for consistent text field styling
+  Widget _buildAuthTextField(TextEditingController controller, String label, IconData icon, {bool obscureText = false, TextInputType keyboardType = TextInputType.text, String? hintText}) {
+    return TextField(
+      controller: controller,
+      obscureText: obscureText,
+      keyboardType: keyboardType,
+      style: const TextStyle(color: Colors.black87, fontSize: 17), // Slightly larger text
+      decoration: InputDecoration(
+        labelText: label,
+        hintText: hintText,
+        labelStyle: TextStyle(color: Colors.deepPurple.shade800, fontWeight: FontWeight.w600), // Bolder, darker label
+        hintStyle: TextStyle(color: Colors.grey.shade600), // Darker hint text
+        filled: true,
+        fillColor: Colors.white.withOpacity(0.98), // Almost opaque white
+        border: OutlineInputBorder(
+          borderRadius: BorderRadius.circular(18), // Even more rounded
+          borderSide: BorderSide.none,
+        ),
+        enabledBorder: OutlineInputBorder(
+          borderRadius: BorderRadius.circular(18),
+          borderSide: BorderSide(color: Colors.deepPurple.shade300, width: 1.5), // Thicker, clearer border
+        ),
+        focusedBorder: OutlineInputBorder(
+          borderRadius: BorderRadius.circular(18),
+          borderSide: BorderSide(color: Colors.deepPurple.shade800, width: 3), // Even thicker focused border
+        ),
+        prefixIcon: Icon(icon, color: Colors.deepPurple.shade500), // Slightly brighter icon
+        contentPadding: const EdgeInsets.symmetric(vertical: 18, horizontal: 15), // Adjust padding
       ),
     );
   }

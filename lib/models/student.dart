@@ -13,6 +13,7 @@ class Student {
   final String? schoolName;
   final DateTime? lastDeviceSync;
   final User? user; // Nested User object if fetched with student details
+  final String? walletAddress; // ADDED: New field for wallet address
 
   Student({
     required this.userId,
@@ -25,6 +26,7 @@ class Student {
     this.schoolName,
     this.lastDeviceSync,
     this.user,
+    this.walletAddress, // ADDED: To constructor
   });
 
   factory Student.fromJson(Map<String, dynamic> json) {
@@ -48,6 +50,7 @@ class Student {
       user: json['user'] != null
           ? User.fromJson(json['user'])
           : null,
+      walletAddress: json['wallet_address'] as String?, // ADDED: Parse wallet_address
     );
   }
 
@@ -62,6 +65,7 @@ class Student {
       'class_name': className,
       'school_name': schoolName,
       'last_device_sync': lastDeviceSync?.toIso8601String(),
+      'wallet_address': walletAddress, // ADDED: To Json
     };
   }
 
@@ -77,6 +81,7 @@ class Student {
       'class_name': className,
       'school_name': schoolName,
       'last_device_sync': lastDeviceSync?.toIso8601String(),
+      'wallet_address': walletAddress, // ADDED: To Map
     };
   }
 
@@ -97,7 +102,8 @@ class Student {
           ? DateTime.parse(map['last_device_sync'])
           : null,
       // User object is not stored directly in student table, so not parsed from map here
-      user: null,
+      user: null, // User object cannot be reconstructed from map directly without full user data
+      walletAddress: map['wallet_address'], // ADDED: From Map
     );
   }
 
@@ -113,6 +119,7 @@ class Student {
     String? schoolName,
     DateTime? lastDeviceSync,
     User? user,
+    String? walletAddress, // ADDED: To copyWith
   }) {
     return Student(
       userId: userId ?? this.userId,
@@ -125,6 +132,7 @@ class Student {
       schoolName: schoolName ?? this.schoolName,
       lastDeviceSync: lastDeviceSync ?? this.lastDeviceSync,
       user: user ?? this.user,
+      walletAddress: walletAddress ?? this.walletAddress, // ADDED: To copyWith
     );
   }
 }

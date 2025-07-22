@@ -24,7 +24,7 @@ class _LessonDetailScreenState extends State<LessonDetailScreen> {
   List<Question> _questions = [];
   bool _isLoading = true;
   String? _errorMessage;
-  Student? _currentStudent; // This will hold the student profile
+  Student? _currentStudent;
 
   final Map<String, QuestionAttemptState> _questionStates = {};
 
@@ -46,8 +46,7 @@ class _LessonDetailScreenState extends State<LessonDetailScreen> {
       _errorMessage = null;
     });
     try {
-      // First, try to load from local database (might have a generated ID from previous session)
-      final int? currentUserId = await _apiService.getCurrentUserId(); // Assuming you have a way to get current user ID
+      final int? currentUserId = await _apiService.getCurrentUserId();
       if (currentUserId != null) {
         _currentStudent = await _databaseService.getStudentByUserId(currentUserId);
         if (_currentStudent != null) {
@@ -55,7 +54,6 @@ class _LessonDetailScreenState extends State<LessonDetailScreen> {
         }
       }
 
-      // If not found locally or studentIdCode is null, fetch from API
       if (_currentStudent == null || _currentStudent!.studentIdCode == null) {
         final fetchedStudent = await _apiService.fetchCurrentStudentProfile();
         if (fetchedStudent == null) {
@@ -67,19 +65,15 @@ class _LessonDetailScreenState extends State<LessonDetailScreen> {
         _currentStudent = fetchedStudent;
         print('LessonDetailScreen: Student profile loaded from API: ${_currentStudent?.user?.username}, ID Code: ${_currentStudent?.studentIdCode}');
 
-        // WORKAROUND: If student_id_code is still null from Django, generate one
         if (_currentStudent!.studentIdCode == null || _currentStudent!.studentIdCode!.isEmpty) {
           final generatedId = 'LOCAL_STUDENT_${_currentStudent!.userId}_${const Uuid().v4().substring(0, 8)}';
           _currentStudent = _currentStudent!.copyWith(studentIdCode: generatedId);
           print('LessonDetailScreen: Generated local student_id_code: $generatedId as Django provided null.');
 
-          // Attempt to save this generated ID back to local DB for persistence
           await _databaseService.updateStudent(_currentStudent!);
           print('LessonDetailScreen: Updated local student profile with generated ID code.');
         }
       } else {
-         // If we already had a local student with a studentIdCode, ensure it's up-to-date from API
-         // (This ensures we don't use stale local data if Django was updated)
          final fetchedStudent = await _apiService.fetchCurrentStudentProfile();
          if (fetchedStudent != null && fetchedStudent.studentIdCode != null && fetchedStudent.studentIdCode!.isNotEmpty) {
            if (_currentStudent!.studentIdCode != fetchedStudent.studentIdCode) {
@@ -90,7 +84,6 @@ class _LessonDetailScreenState extends State<LessonDetailScreen> {
          }
       }
 
-      // Now proceed with loading questions
       List<Question> localQuestions = await _databaseService.getQuestionsForLesson(widget.lesson.uuid);
 
       if (localQuestions.isNotEmpty) {
@@ -102,10 +95,10 @@ class _LessonDetailScreenState extends State<LessonDetailScreen> {
           }
         });
         print('LessonDetailScreen: Loaded ${localQuestions.length} questions from local database.');
-        _fetchQuestionsFromApi(backgroundSync: true); // Background sync for latest questions
+        _fetchQuestionsFromApi(backgroundSync: true);
       } else {
         print('LessonDetailScreen: No local questions found. Fetching from API...');
-        await _fetchQuestionsFromApi(backgroundSync: false); // Blocking fetch if no local data
+        await _fetchQuestionsFromApi(backgroundSync: false);
       }
     } catch (e) {
       setState(() {
@@ -166,7 +159,6 @@ class _LessonDetailScreenState extends State<LessonDetailScreen> {
       return;
     }
 
-    // DEBUG PRINT: What studentIdCode is being used right now?
     print('LessonDetailScreen: Using studentIdCode for QuizAttempt: ${_currentStudent!.studentIdCode}');
 
 
@@ -200,11 +192,10 @@ class _LessonDetailScreenState extends State<LessonDetailScreen> {
       print('Submitted answer for ${question.uuid}: $submittedAnswer. Correct: ${state.isAnswerCorrect}. Feedback: ${state.feedbackMessage}');
     });
 
-    // Save quiz attempt to local database
     final quizAttempt = QuizAttempt(
       uuid: const Uuid().v4(),
       studentUserId: _currentStudent!.userId,
-      studentIdCode: _currentStudent!.studentIdCode, // This will now be non-null due to fallback
+      studentIdCode: _currentStudent!.studentIdCode,
       questionUuid: question.uuid,
       submittedAnswer: submittedAnswer ?? '',
       isCorrect: _questionStates[question.uuid]!.isAnswerCorrect,
@@ -235,14 +226,15 @@ class _LessonDetailScreenState extends State<LessonDetailScreen> {
     return Scaffold(
       appBar: AppBar(
         title: Text(widget.lesson.title),
-        backgroundColor: Colors.deepPurple,
+        backgroundColor: Colors.deepPurple.shade900, // Even darker purple for app bar
         foregroundColor: Colors.white,
         centerTitle: true,
+        elevation: 0,
       ),
       body: Container(
         decoration: BoxDecoration(
           gradient: LinearGradient(
-            colors: [Colors.deepPurple.shade700, Colors.purpleAccent.shade400],
+            colors: [Colors.deepPurple.shade900, Colors.indigo.shade800, Colors.purple.shade700], // Deeper, richer gradient
             begin: Alignment.topCenter,
             end: Alignment.bottomCenter,
           ),
@@ -254,52 +246,53 @@ class _LessonDetailScreenState extends State<LessonDetailScreen> {
             : _errorMessage != null
                 ? Center(
                     child: Padding(
-                      padding: const EdgeInsets.all(24.0),
+                      padding: const EdgeInsets.all(28.0), // Increased padding
                       child: Text(
                         _errorMessage!,
-                        style: const TextStyle(color: Colors.redAccent, fontSize: 18),
+                        style: const TextStyle(color: Colors.redAccent, fontSize: 19, fontWeight: FontWeight.bold), // Bolder, larger error
                         textAlign: TextAlign.center,
                       ),
                     ),
                   )
                 : SingleChildScrollView(
-                    padding: const EdgeInsets.all(16.0),
+                    padding: const EdgeInsets.all(20.0), // Increased padding
                     child: Column(
                       crossAxisAlignment: CrossAxisAlignment.start,
                       children: [
                         Card(
-                          margin: const EdgeInsets.only(bottom: 20),
-                          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(15)),
-                          elevation: 8,
-                          shadowColor: Colors.black.withOpacity(0.4),
+                          margin: const EdgeInsets.only(bottom: 25), // Increased margin
+                          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(25)), // Even more rounded
+                          elevation: 16, // More pronounced shadow
+                          shadowColor: Colors.black.withOpacity(0.5),
+                          color: Colors.white, // Solid white for content cards
                           child: Padding(
-                            padding: const EdgeInsets.all(20.0),
+                            padding: const EdgeInsets.all(30.0), // Increased padding
                             child: Column(
                               crossAxisAlignment: CrossAxisAlignment.start,
                               children: [
                                 const Text(
                                   'Lesson Overview',
                                   style: TextStyle(
-                                    fontSize: 24,
+                                    fontSize: 26, // Larger font
                                     fontWeight: FontWeight.bold,
                                     color: Colors.deepPurple,
                                   ),
                                 ),
-                                const SizedBox(height: 10),
+                                const SizedBox(height: 15), // Increased spacing
                                 Text(
                                   widget.lesson.description ?? 'No detailed description available for this lesson.',
                                   style: TextStyle(
-                                    fontSize: 16,
-                                    color: Colors.grey.shade700,
+                                    fontSize: 17, // Larger font
+                                    color: Colors.grey.shade900, // Even darker grey for better contrast
                                   ),
                                 ),
-                                const SizedBox(height: 15),
+                                const SizedBox(height: 25), // Increased spacing
                                 Row(
                                   mainAxisAlignment: MainAxisAlignment.spaceAround,
                                   children: [
-                                    _buildInfoChip(Icons.subject, widget.lesson.subject ?? 'N/A', Colors.blueGrey),
-                                    _buildInfoChip(Icons.bar_chart, widget.lesson.difficultyLevel ?? 'N/A', Colors.orange),
-                                    _buildInfoChip(Icons.numbers, 'v${widget.lesson.version}', Colors.green),
+                                    _buildInfoChip(Icons.subject_rounded, widget.lesson.subject ?? 'N/A', Colors.blueGrey.shade700), // Rounded, darker color
+                                    _buildInfoChip(Icons.bar_chart_rounded, widget.lesson.difficultyLevel ?? 'N/A', Colors.orange.shade700), // Rounded, darker color
+                                    _buildInfoChip(Icons.numbers_rounded, 'v${widget.lesson.version}', Colors.green.shade700), // Rounded, darker color
                                   ],
                                 ),
                               ],
@@ -310,27 +303,27 @@ class _LessonDetailScreenState extends State<LessonDetailScreen> {
                         const Text(
                           'Practice Questions',
                           style: TextStyle(
-                            fontSize: 26,
+                            fontSize: 30, // Even larger font
                             fontWeight: FontWeight.bold,
                             color: Colors.white,
                             shadows: [
-                              Shadow(blurRadius: 5.0, color: Colors.black38, offset: Offset(1.0, 1.0)),
+                              Shadow(blurRadius: 10.0, color: Colors.black87, offset: Offset(2.0, 2.0)),
                             ],
                           ),
                         ),
-                        const SizedBox(height: 15),
+                        const SizedBox(height: 25), // Increased spacing
 
                         _questions.isEmpty
                             ? Center(
                                 child: Padding(
-                                  padding: const EdgeInsets.all(20.0),
+                                  padding: const EdgeInsets.all(25.0),
                                   child: Column(
                                     children: [
-                                      Icon(Icons.help_outline, size: 60, color: Colors.white70),
-                                      SizedBox(height: 10),
+                                      Icon(Icons.help_outline_rounded, size: 90, color: Colors.white70), // Larger, rounded icon
+                                      SizedBox(height: 25),
                                       Text(
                                         'No practice questions for this lesson yet.',
-                                        style: TextStyle(fontSize: 18, color: Colors.white70),
+                                        style: TextStyle(fontSize: 20, color: Colors.white70, fontWeight: FontWeight.w500), // Larger, medium weight
                                         textAlign: TextAlign.center,
                                       ),
                                     ],
@@ -346,32 +339,33 @@ class _LessonDetailScreenState extends State<LessonDetailScreen> {
                                   final questionState = _questionStates[question.uuid]!;
 
                                   return Card(
-                                    margin: const EdgeInsets.symmetric(vertical: 10),
-                                    shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(15)),
-                                    elevation: 6,
-                                    shadowColor: Colors.black.withOpacity(0.3),
+                                    margin: const EdgeInsets.symmetric(vertical: 15), // Increased vertical margin
+                                    shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(25)), // Even more rounded
+                                    elevation: 10, // More shadow
+                                    shadowColor: Colors.black.withOpacity(0.4),
+                                    color: Colors.white, // Solid white
                                     child: Padding(
-                                      padding: const EdgeInsets.all(20.0),
+                                      padding: const EdgeInsets.all(30.0), // Increased padding
                                       child: Column(
                                         crossAxisAlignment: CrossAxisAlignment.start,
                                         children: [
                                           Text(
                                             'Question ${index + 1}:',
                                             style: TextStyle(
-                                              fontSize: 18,
+                                              fontSize: 22, // Larger font
                                               fontWeight: FontWeight.bold,
-                                              color: Colors.deepPurple.shade700,
+                                              color: Colors.deepPurple.shade800, // Darker purple
                                             ),
                                           ),
-                                          const SizedBox(height: 8),
+                                          const SizedBox(height: 12),
                                           Text(
                                             question.questionText,
                                             style: TextStyle(
-                                              fontSize: 18,
-                                              color: Colors.grey.shade800,
+                                              fontSize: 19, // Larger font
+                                              color: Colors.grey.shade900, // Darker grey
                                             ),
                                           ),
-                                          const SizedBox(height: 10),
+                                          const SizedBox(height: 18),
 
                                           if (question.questionType == 'MCQ' && question.options != null)
                                             Column(
@@ -382,14 +376,15 @@ class _LessonDetailScreenState extends State<LessonDetailScreen> {
                                                     style: TextStyle(
                                                       color: questionState.showFeedback
                                                           ? (option == question.correctAnswerText
-                                                              ? Colors.green.shade700
+                                                              ? Colors.green.shade800 // Even darker green
                                                               : (option == questionState.selectedOption
-                                                                  ? Colors.red.shade700
+                                                                  ? Colors.red.shade800 // Even darker red
                                                                   : Colors.black87))
                                                           : Colors.black87,
                                                       fontWeight: questionState.showFeedback && option == question.correctAnswerText
                                                           ? FontWeight.bold
                                                           : FontWeight.normal,
+                                                      fontSize: 17, // Consistent font size
                                                     ),
                                                   ),
                                                   value: option,
@@ -401,7 +396,8 @@ class _LessonDetailScreenState extends State<LessonDetailScreen> {
                                                             questionState.selectedOption = value;
                                                           });
                                                         },
-                                                  activeColor: Colors.deepPurple,
+                                                  activeColor: Colors.deepPurple.shade800, // Even deeper purple for active radio
+                                                  controlAffinity: ListTileControlAffinity.leading,
                                                 );
                                               }).toList(),
                                             )
@@ -411,29 +407,33 @@ class _LessonDetailScreenState extends State<LessonDetailScreen> {
                                               decoration: InputDecoration(
                                                 labelText: 'Your Answer',
                                                 hintText: 'Type your answer here',
+                                                labelStyle: TextStyle(color: Colors.deepPurple.shade800, fontWeight: FontWeight.w600),
+                                                hintStyle: TextStyle(color: Colors.grey.shade600),
                                                 border: OutlineInputBorder(
-                                                  borderRadius: BorderRadius.circular(10),
-                                                  borderSide: BorderSide(color: Colors.deepPurple),
+                                                  borderRadius: BorderRadius.circular(18),
+                                                  borderSide: BorderSide.none,
                                                 ),
                                                 enabledBorder: OutlineInputBorder(
-                                                  borderRadius: BorderRadius.circular(10),
-                                                  borderSide: BorderSide(color: Colors.deepPurple.shade200),
+                                                  borderRadius: BorderRadius.circular(18),
+                                                  borderSide: BorderSide(color: Colors.deepPurple.shade300, width: 1.5),
                                                 ),
                                                 focusedBorder: OutlineInputBorder(
-                                                  borderRadius: BorderRadius.circular(10),
-                                                  borderSide: BorderSide(color: Colors.deepPurple.shade700, width: 2),
+                                                  borderRadius: BorderRadius.circular(18),
+                                                  borderSide: BorderSide(color: Colors.deepPurple.shade800, width: 3),
                                                 ),
                                                 filled: true,
-                                                fillColor: Colors.deepPurple.shade50,
+                                                fillColor: Colors.deepPurple.shade50.withOpacity(0.8),
+                                                contentPadding: const EdgeInsets.symmetric(vertical: 18, horizontal: 15),
                                               ),
-                                              maxLines: 3,
+                                              maxLines: 5, // More lines for short answer
                                               enabled: !questionState.showFeedback,
                                               onChanged: (text) {
                                                 questionState.submittedAnswer = text;
                                               },
+                                              style: const TextStyle(color: Colors.black87, fontSize: 17),
                                             ),
 
-                                          const SizedBox(height: 15),
+                                          const SizedBox(height: 25),
 
                                           if (!questionState.showFeedback)
                                             Center(
@@ -455,11 +455,13 @@ class _LessonDetailScreenState extends State<LessonDetailScreen> {
                                                   }
                                                 },
                                                 style: ElevatedButton.styleFrom(
-                                                  backgroundColor: Colors.purple,
+                                                  backgroundColor: Colors.deepPurpleAccent.shade700,
                                                   foregroundColor: Colors.white,
-                                                  padding: const EdgeInsets.symmetric(horizontal: 30, vertical: 15),
-                                                  shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
-                                                  textStyle: const TextStyle(fontSize: 16, fontWeight: FontWeight.bold),
+                                                  padding: const EdgeInsets.symmetric(horizontal: 50, vertical: 20), // Larger button
+                                                  shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
+                                                  textStyle: const TextStyle(fontSize: 20, fontWeight: FontWeight.bold),
+                                                  elevation: 10,
+                                                  shadowColor: Colors.deepPurple.shade900.withOpacity(0.7),
                                                 ),
                                                 child: const Text('Submit Answer'),
                                               ),
@@ -469,51 +471,52 @@ class _LessonDetailScreenState extends State<LessonDetailScreen> {
                                             Column(
                                               crossAxisAlignment: CrossAxisAlignment.start,
                                               children: [
-                                                const Divider(height: 20, thickness: 1, color: Colors.grey),
+                                                const Divider(height: 35, thickness: 2, color: Colors.deepPurple), // Thicker divider
                                                 Row(
                                                   children: [
                                                     Icon(
-                                                      questionState.isAnswerCorrect ? Icons.check_circle : Icons.cancel,
-                                                      color: questionState.isAnswerCorrect ? Colors.green : Colors.red,
-                                                      size: 28,
+                                                      questionState.isAnswerCorrect ? Icons.check_circle_outline_rounded : Icons.cancel_outlined, // Rounded icons, outline for cancel
+                                                      color: questionState.isAnswerCorrect ? Colors.green.shade800 : Colors.red.shade800, // Deeper colors
+                                                      size: 36, // Larger icon
                                                     ),
-                                                    const SizedBox(width: 8),
+                                                    const SizedBox(width: 12),
                                                     Text(
                                                       questionState.isAnswerCorrect ? 'Correct!' : 'Incorrect!',
                                                       style: TextStyle(
-                                                        fontSize: 20,
+                                                        fontSize: 24, // Larger font
                                                         fontWeight: FontWeight.bold,
-                                                        color: questionState.isAnswerCorrect ? Colors.green : Colors.red,
+                                                        color: questionState.isAnswerCorrect ? Colors.green.shade800 : Colors.red.shade800,
                                                       ),
                                                     ),
                                                   ],
                                                 ),
-                                                const SizedBox(height: 10),
+                                                const SizedBox(height: 15),
                                                 Text(
                                                   'The correct answer was: "${question.correctAnswerText}"',
                                                   style: TextStyle(
-                                                    fontSize: 16,
+                                                    fontSize: 17,
                                                     color: Colors.green.shade900,
                                                     fontStyle: FontStyle.italic,
+                                                    fontWeight: FontWeight.w600,
                                                   ),
                                                 ),
-                                                const SizedBox(height: 10),
+                                                const SizedBox(height: 18),
                                                 if (questionState.feedbackMessage != null)
                                                   Text(
                                                     'Feedback: ${questionState.feedbackMessage!}',
-                                                    style: TextStyle(fontSize: 15, color: Colors.blueGrey.shade800),
+                                                    style: TextStyle(fontSize: 17, color: Colors.blueGrey.shade900), // Darker blue-grey
                                                   ),
-                                                const SizedBox(height: 5),
+                                                const SizedBox(height: 12),
                                                 Row(
                                                   children: [
                                                     const Text(
                                                       'Score: ',
-                                                      style: TextStyle(fontSize: 15, color: Colors.blueGrey),
+                                                      style: TextStyle(fontSize: 17, color: Colors.blueGrey),
                                                     ),
                                                     ...List.generate(3, (i) => Icon(
-                                                      Icons.star,
-                                                      color: i < (questionState.feedbackScore ?? 0) ? Colors.amber : Colors.grey.shade300,
-                                                      size: 20,
+                                                      Icons.star_rounded,
+                                                      color: i < (questionState.feedbackScore ?? 0) ? Colors.amber.shade700 : Colors.grey.shade400, // Richer amber, darker grey
+                                                      size: 25, // Larger stars
                                                     )),
                                                   ],
                                                 ),
@@ -534,15 +537,15 @@ class _LessonDetailScreenState extends State<LessonDetailScreen> {
 
   Widget _buildInfoChip(IconData icon, String text, Color color) {
     return Chip(
-      avatar: Icon(icon, size: 18, color: color),
+      avatar: Icon(icon, size: 22, color: color), // Larger icon
       label: Text(
         text,
-        style: TextStyle(color: color, fontWeight: FontWeight.bold),
+        style: TextStyle(color: color, fontWeight: FontWeight.bold, fontSize: 15), // Slightly larger text
       ),
-      backgroundColor: color.withOpacity(0.1),
-      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
-      side: BorderSide(color: color.withOpacity(0.5), width: 1),
-      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+      backgroundColor: color.withOpacity(0.2), // More opaque background
+      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)), // More rounded
+      side: BorderSide(color: color.withOpacity(0.7), width: 2), // Thicker, clearer border
+      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8), // More padding
     );
   }
 }
