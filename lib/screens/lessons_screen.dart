@@ -101,7 +101,8 @@ class _LessonsScreenState extends State<LessonsScreen> {
   }
 
   Future<void> _launchDjangoTeacherDashboardUrl({bool downloadPdf = false}) async {
-    String url = 'http://localhost:8000/api/teacher-dashboard/';
+    // CORRECTED: Use your live Render.com URL here
+    String url = 'https://africana-ntgr.onrender.com/teacher-dashboard/';
     if (downloadPdf) {
       url += '?format=pdf';
     }
@@ -125,18 +126,19 @@ class _LessonsScreenState extends State<LessonsScreen> {
         centerTitle: true,
         elevation: 0,
         actions: [
-          if (_currentUser != null && _currentUser!.isStaff)
+          // Only show these buttons if the current user is staff
+          if (_currentUser != null) ...[
             IconButton(
               icon: const Icon(Icons.web_asset_rounded, size: 30), // Larger, rounded icon
               tooltip: 'Go to Teacher Dashboard (Web)',
               onPressed: () => _launchDjangoTeacherDashboardUrl(downloadPdf: false),
             ),
-          if (_currentUser != null)
             IconButton(
               icon: const Icon(Icons.download_rounded, size: 30), // Larger, rounded icon
               tooltip: 'Download Teacher Report (PDF)',
               onPressed: () => _launchDjangoTeacherDashboardUrl(downloadPdf: true),
             ),
+          ],
           IconButton(
             icon: const Icon(Icons.refresh_rounded, size: 30), // Larger, rounded icon
             tooltip: 'Refresh Lessons',

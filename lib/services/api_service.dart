@@ -12,10 +12,9 @@ import 'package:shared_preferences/shared_preferences.dart';
 import 'package:flutter/foundation.dart' show kIsWeb;
 
 class ApiService {
-  // IMPORTANT: For deployment, replace localhost/10.0.2.2 with your live Render URL.
   // The base URL for your Django backend API.
-  // Use your Render.com service URL here.
-  static const String _baseUrl = 'https://africana-ntgr.onrender.com/api'; // Your live Render backend URL
+  // This should always point to your live Render.com service URL for deployed apps.
+  static const String _baseUrl = 'https://africana-ntgr.onrender.com/api';
 
   String? _authToken;
   int? _currentUserId;
@@ -31,6 +30,8 @@ class ApiService {
   static const int _demoUserId = 5; // The initial student ID you identified
 
   ApiService() {
+    // No need to await here, it runs asynchronously in the background
+    // The _ensureToken() method will handle waiting if needed before API calls
     _loadAuthToken();
   }
 
@@ -41,15 +42,15 @@ class ApiService {
     _currentUserId = prefs.getInt('currentUserId');
 
     // If no token is saved (first run or after logout), use the demo token and ID
-    if (_authToken == null) {
+    if (_authToken == null || _currentUserId == null) {
       _authToken = _demoAuthToken;
       _currentUserId = _demoUserId;
-      // Optionally save them for persistence across restarts in demo mode
+      // Save them for persistence across restarts in demo mode, so it's not always "first run"
       await prefs.setString('authToken', _authToken!);
       await prefs.setInt('currentUserId', _currentUserId!);
       print('API Service: Using DEMO Auth Token and User ID: $_authToken, User ID: $_currentUserId');
     } else {
-      print('API Service: Loaded Auth Token: $_authToken, User ID: $_currentUserId');
+      print('API Service: Loaded Auth Token from SharedPreferences: $_authToken, User ID: $_currentUserId');
     }
   }
 
@@ -71,14 +72,19 @@ class ApiService {
     print('API Service: Cleared Auth Token and User ID.');
     try {
       final url = Uri.parse('$_baseUrl/auth/logout/');
-      await http.post(url, headers: _getHeaders());
+      // Send logout request with the cleared token (which will be null, so no auth header)
+      // This might still result in 401 if the server expects a token even for logout.
+      // Django's logout typically invalidates the token on the server side.
+      await http.post(url, headers: _getHeaders(includeAuth: false)); // Do not include auth for logout
     } catch (e) {
       print('Error calling Django logout: $e');
     }
   }
 
   Future<void> _ensureToken() async {
-    if (_authToken == null || _currentUserId == null) { // Ensure both token and ID are present
+    // This method ensures that _authToken and _currentUserId are populated
+    // before any API call that requires authentication.
+    if (_authToken == null || _currentUserId == null) {
       await _loadAuthToken();
     }
   }
@@ -136,11 +142,14 @@ class ApiService {
 
   // --- User/Student Endpoints ---
   Future<User?> fetchCurrentUser() async {
-    await _ensureToken();
-    if (_authToken == null || _currentUserId == null) return null;
+    await _ensureToken(); // Ensure token is loaded before making the call
+    if (_authToken == null || _currentUserId == null) {
+      print('API Service: fetchCurrentUser called without token or user ID. Returning null.');
+      return null;
+    }
 
     final url = Uri.parse('$_baseUrl/students/$_currentUserId/');
-    print('API Service: Fetching current user/student profile from $url');
+    print('API Service: Fetching current user/student profile from $url with token $_authToken');
     try {
       final response = await http.get(url, headers: _getHeaders());
       print('API Service: Fetch current user response status: ${response.statusCode}, body: ${response.body}');
@@ -148,7 +157,7 @@ class ApiService {
         final studentData = jsonDecode(response.body);
         return User.fromJson(studentData['user']);
       } else if (response.statusCode == 401) {
-        print('API Service: Authentication failed (401) for current user. Token might be invalid or expired.');
+        print('API Service: Authentication failed (401) for current user. Token might be invalid or expired. Logging out.');
         await logout();
         return null;
       }
@@ -160,7 +169,7 @@ class ApiService {
   }
 
   Future<Student?> fetchCurrentStudentProfile() async {
-    await _ensureToken();
+    await _ensureToken(); // Ensure token is loaded before making the call
     if (_authToken == null || _currentUserId == null) return null;
 
     final url = Uri.parse('$_baseUrl/students/$_currentUserId/');
@@ -189,7 +198,7 @@ class ApiService {
 
   // --- Lesson Endpoints ---
   Future<List<Lesson>> fetchLessons() async {
-    await _ensureToken();
+    await _ensureToken(); // Ensure token is loaded before making the call
     if (_authToken == null) return [];
 
     final url = Uri.parse('$_baseUrl/lessons/');
