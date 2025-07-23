@@ -80,6 +80,20 @@ class _HomeScreenState extends State<HomeScreen> with SingleTickerProviderStateM
     }
   }
 
+  // Function to launch the web-based teacher dashboard
+  Future<void> _launchTeacherDashboardWeb() async {
+    // IMPORTANT: Use your live Render.com URL for the Django backend here.
+    // The path is /teacher-dashboard/ as defined in your Django urls.py
+    final Uri url = Uri.parse('https://africana-ntgr.onrender.com/teacher-dashboard/');
+    if (!await launchUrl(url, mode: LaunchMode.externalApplication)) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('Could not launch $url')),
+        );
+      }
+    }
+  }
+
   @override
   Widget build(BuildContext context) {
     final size = MediaQuery.of(context).size;
@@ -234,6 +248,20 @@ class _HomeScreenState extends State<HomeScreen> with SingleTickerProviderStateM
                   Colors.tealAccent.shade700, // Even brighter teal
                   Colors.teal.shade900, // Darker teal for text
                 ),
+                const SizedBox(height: 25), // Increased spacing
+
+                // New button to launch the web-based Teacher Dashboard
+                _buildHomeButton(
+                  context,
+                  'View Web Dashboard',
+                  Icons.dashboard_rounded,
+                  // This button will launch an external URL, not navigate to a Flutter screen
+                  // We'll use a dummy screen for type safety, but the onPressed will override it.
+                  Container(),
+                  Colors.orange.shade700, // Vibrant orange
+                  Colors.white,
+                  onPressed: _launchTeacherDashboardWeb, // Call the new function
+                ),
                 const SizedBox(height: 50), // Increased spacing
 
                 _buildHomeButton(
@@ -252,12 +280,13 @@ class _HomeScreenState extends State<HomeScreen> with SingleTickerProviderStateM
     );
   }
 
-  Widget _buildHomeButton(BuildContext context, String label, IconData icon, Widget screen, Color bgColor, Color fgColor) {
+  // Modified _buildHomeButton to accept an optional onPressed callback
+  Widget _buildHomeButton(BuildContext context, String label, IconData icon, Widget screen, Color bgColor, Color fgColor, {VoidCallback? onPressed}) {
     final size = MediaQuery.of(context).size;
     return SizedBox(
       width: size.width * 0.85, // Even wider buttons
       child: ElevatedButton.icon(
-        onPressed: () {
+        onPressed: onPressed ?? () { // Use provided onPressed or default navigation
           Navigator.push(
             context,
             MaterialPageRoute(builder: (context) => screen),
