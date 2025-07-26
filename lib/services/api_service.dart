@@ -17,53 +17,52 @@ class ApiService {
   static const String _baseUrl = 'https://africana-ntgr.onrender.com/api';
 
   String? _authToken;
-  int? _currentUserId;
+  int? _currentUserId; // This will store the ID of the logged-in user
 
   ApiService() {
-    _loadAuthToken();
+    _loadAuthToken(); // Load token and user ID on service initialization
   }
 
   // --- Utility Methods ---
   Future<void> _loadAuthToken() async {
     final prefs = await SharedPreferences.getInstance();
     _authToken = prefs.getString('authToken');
-    _currentUserId = prefs.getInt('currentUserId');
-
-    if (_authToken == null) {
-      print('API Service: No Auth Token found in SharedPreferences. User needs to log in.');
-    } else {
-      print('API Service: Loaded Auth Token from SharedPreferences: $_authToken, User ID: $_currentUserId');
-    }
+    _currentUserId = prefs.getInt('currentUserId'); // Load stored user ID
+    print('API Service: Loaded token: $_authToken, User ID: $_currentUserId');
   }
 
   Future<void> _saveAuthToken(String token, int userId) async {
     final prefs = await SharedPreferences.getInstance();
     await prefs.setString('authToken', token);
-    await prefs.setInt('currentUserId', userId);
+    await prefs.setInt('currentUserId', userId); // Save user ID
     _authToken = token;
     _currentUserId = userId;
-    print('API Service: Saved Auth Token: $_authToken, User ID: $_currentUserId');
+    print('API Service: Saved token and User ID: $userId');
   }
 
   Future<void> logout() async {
+    // Attempt to invalidate token on server first
+    if (_authToken != null) {
+      final url = Uri.parse('$_baseUrl/auth/logout/');
+      try {
+        final response = await http.post(url, headers: _getHeaders());
+        if (response.statusCode == 204 || response.statusCode == 401) {
+          print('API Service: Server logout successful or token already invalid.');
+        } else {
+          print('API Service: Server logout failed with status: ${response.statusCode}, body: ${response.body}');
+        }
+      } catch (e) {
+        print('API Service: Error during server logout: $e');
+      }
+    }
+
+    // Clear local storage regardless of server response
     final prefs = await SharedPreferences.getInstance();
     await prefs.remove('authToken');
-    await prefs.remove('currentUserId');
+    await prefs.remove('currentUserId'); // Clear user ID
     _authToken = null;
     _currentUserId = null;
-    print('API Service: Cleared Auth Token and User ID.');
-    try {
-      final url = Uri.parse('$_baseUrl/auth/logout/');
-      await http.post(url, headers: _getHeaders(includeAuth: false));
-    } catch (e) {
-      print('Error calling Django logout: $e');
-    }
-  }
-
-  Future<void> _ensureToken() async {
-    if (_authToken == null || _currentUserId == null) {
-      await _loadAuthToken();
-    }
+    print('API Service: Local auth token and user ID cleared.');
   }
 
   Map<String, String> _getHeaders({bool includeAuth = true, bool isJson = true}) {
@@ -77,19 +76,28 @@ class ApiService {
     return headers;
   }
 
+  // This method ensures the auth token and user ID are loaded before use.
+  Future<void> _ensureToken() async {
+    if (_authToken == null || _currentUserId == null) {
+      await _loadAuthToken();
+    }
+  }
+
   Future<int?> getCurrentUserId() async {
     await _ensureToken();
     return _currentUserId;
   }
 
   // --- Auth Endpoints ---
-  Future<Map<String, dynamic>> registerUser(String username, String email, String password, {String? studentIdCode}) async {
+  // MODIFIED: Added email parameter
+  Future<Map<String, dynamic>> registerUser(String username, String email, String password, {String? studentIdCode, String? gender}) async {
     final url = Uri.parse('$_baseUrl/auth/register/');
     final body = jsonEncode({
       'username': username,
-      'email': email,
+      'email': email, // Added email
       'password': password,
       if (studentIdCode != null) 'student_id_code': studentIdCode,
+      if (gender != null) 'gender': gender, // Added gender
     });
     try {
       final response = await http.post(url, headers: _getHeaders(includeAuth: false), body: body);
@@ -98,9 +106,12 @@ class ApiService {
         await _saveAuthToken(responseData['token'], responseData['user_id']);
         return {'success': true, 'message': 'Registration successful'};
       } else {
-        return {'success': false, 'message': responseData['error'] ?? 'Registration failed'};
+        // More detailed error message for debugging 400 Bad Request
+        print('API Service: Register failed - Status: ${response.statusCode}, Body: ${response.body}');
+        return {'success': false, 'message': responseData['error'] ?? responseData.toString() ?? 'Registration failed'};
       }
     } catch (e) {
+      print('API Service: Register Error: $e');
       return {'success': false, 'message': 'Network error during registration: $e'};
     }
   }
@@ -113,7 +124,7 @@ class ApiService {
       final responseData = jsonDecode(response.body);
       if (response.statusCode == 200) {
         await _saveAuthToken(responseData['token'], responseData['user_id']);
-        return {'success': true, 'message': 'Login successful'};
+        return {'success': true, 'message': 'Login successful', 'user_id': responseData['user_id'], 'username': responseData['username']}; // Return user_id and username
       } else {
         return {'success': false, 'message': responseData['error'] ?? 'Login failed'};
       }
@@ -130,22 +141,45 @@ class ApiService {
       return null;
     }
 
-    final url = Uri.parse('$_baseUrl/students/$_currentUserId/');
-    print('API Service: Fetching current user/student profile from $url with token $_authToken');
+    // First, try to fetch the Student profile (which includes User data)
+    final studentUrl = Uri.parse('$_baseUrl/students/$_currentUserId/');
+    print('API Service: Attempting to fetch current student profile from $studentUrl with token $_authToken');
     try {
-      final response = await http.get(url, headers: _getHeaders());
-      print('API Service: Fetch current user response status: ${response.statusCode}, body: ${response.body}');
-      if (response.statusCode == 200) {
-        final studentData = jsonDecode(response.body);
-        return User.fromJson(studentData['user']);
-      } else if (response.statusCode == 401) {
-        print('API Service: Authentication failed (401) for current user. Token might be invalid or expired. Logging out.');
+      final studentResponse = await http.get(studentUrl, headers: _getHeaders());
+      print('API Service: Fetch student response status: ${studentResponse.statusCode}, body: ${studentResponse.body}');
+
+      if (studentResponse.statusCode == 200) {
+        final studentData = jsonDecode(studentResponse.body);
+        // Assuming StudentSerializer returns a 'user' key with User details
+        // and other student-specific fields at the top level.
+        // We need to construct a User object from this.
+        // The User model might need to be updated to handle student-specific fields if needed.
+        return User.fromJson(studentData['user']); // Extract user data from the student response
+      } else if (studentResponse.statusCode == 401) {
+        print('API Service: Authentication failed (401) for student profile. Token might be invalid or expired. Logging out.');
         await logout();
         return null;
+      } else if (studentResponse.statusCode == 404) {
+        print('API Service: Student profile not found for ID $_currentUserId. Attempting to fetch basic user info.');
+        // If student profile not found, try to fetch just the basic User data
+        final userUrl = Uri.parse('$_baseUrl/auth/user/');
+        final userResponse = await http.get(userUrl, headers: _getHeaders());
+        if (userResponse.statusCode == 200) {
+          return User.fromJson(jsonDecode(userResponse.body));
+        } else if (userResponse.statusCode == 401) {
+          print('API Service: Authentication failed (401) for basic user info. Logging out.');
+          await logout();
+          return null;
+        } else {
+          print('API Service: Failed to fetch basic user info after student 404: ${userResponse.statusCode}, body: ${userResponse.body}');
+          return null;
+        }
+      } else {
+        print('API Service: Failed to fetch current user/student with status: ${studentResponse.statusCode}, body: ${studentResponse.body}');
+        return null;
       }
-      return null;
     } catch (e) {
-      print('Fetch Current User Error: $e');
+      print('API Service: Fetch Current User/Student Error: $e');
       return null;
     }
   }

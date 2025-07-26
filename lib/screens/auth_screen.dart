@@ -68,10 +68,22 @@ class _AuthScreenState extends State<AuthScreen> {
     final password = _passwordController.text;
     final studentIdCode = _studentIdCodeController.text.isNotEmpty ? _studentIdCodeController.text : null;
 
+    // Basic validation for email during registration
+    if (email.isEmpty && !_isLogin) { // Only require email if registering
+      setState(() {
+        _errorMessage = 'Email is required for registration.';
+        _isLoading = false;
+      });
+      return;
+    }
+
     final result = await _apiService.registerUser(username, email, password, studentIdCode: studentIdCode);
 
     if (result['success']) {
       print('AuthScreen: Registration successful.');
+      // After successful registration, automatically log in the user and navigate to home
+      // Or, if you prefer, switch to login form and let them log in manually:
+      // setState(() { _isLogin = true; });
       _navigateToHome();
     } else {
       print('AuthScreen: Registration failed - ${result['message']}');
@@ -166,7 +178,7 @@ class _AuthScreenState extends State<AuthScreen> {
                 const SizedBox(height: 25), // Increased spacing
 
                 if (!_isLogin) ...[
-                  _buildAuthTextField(_emailController, 'Email (Optional)', Icons.email_rounded, keyboardType: TextInputType.emailAddress), // Rounded icon
+                  _buildAuthTextField(_emailController, 'Email', Icons.email_rounded, keyboardType: TextInputType.emailAddress), // Made email required for registration
                   const SizedBox(height: 25),
                   _buildAuthTextField(_studentIdCodeController, 'Student ID Code (Optional)', Icons.badge_rounded, hintText: 'Provided by your teacher'), // Rounded icon
                   const SizedBox(height: 25),
@@ -195,7 +207,7 @@ class _AuthScreenState extends State<AuthScreen> {
                   onPressed: () {
                     setState(() {
                       _isLogin = !_isLogin;
-                      _errorMessage = null;
+                      _errorMessage = null; // Clear error message on toggle
                     });
                     print('AuthScreen: Toggled to _isLogin=$_isLogin');
                   },
