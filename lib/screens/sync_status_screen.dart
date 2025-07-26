@@ -1,7 +1,7 @@
 // learnflow_ai/flutter_app/lib/screens/sync_status_screen.dart
 
 import 'package:flutter/material.dart';
-import 'package:learnflow_ai/models/quiz_attempt.dart';
+import 'package:learnflow_ai/models/quiz_attempt.dart'; // Ensure this import is present and correct
 import 'package:learnflow_ai/services/database_service.dart';
 import 'package:learnflow_ai/services/api_service.dart';
 
@@ -17,30 +17,33 @@ class _SyncStatusScreenState extends State<SyncStatusScreen> {
   final ApiService _apiService = ApiService();
   List<QuizAttempt> _pendingAttempts = [];
   bool _isLoading = true;
-  String? _errorMessage;
+  String? _statusMessage;
   bool _isSyncing = false;
 
   @override
   void initState() {
     super.initState();
-    _fetchPendingAttempts();
+    _loadPendingAttempts();
   }
 
-  Future<void> _fetchPendingAttempts() async {
+  Future<void> _loadPendingAttempts() async {
     setState(() {
       _isLoading = true;
-      _errorMessage = null;
+      _statusMessage = null;
     });
+
     try {
       final attempts = await _databaseService.getPendingQuizAttempts();
       setState(() {
         _pendingAttempts = attempts;
         _isLoading = false;
+        if (_pendingAttempts.isEmpty) {
+          _statusMessage = 'All quiz attempts are synced! Great job!';
+        }
       });
-      print('SyncStatusScreen: Fetched ${_pendingAttempts.length} pending quiz attempts from local DB.');
     } catch (e) {
       setState(() {
-        _errorMessage = 'Failed to load pending attempts: $e';
+        _statusMessage = 'Error loading pending attempts: $e';
         _isLoading = false;
       });
       print('SyncStatusScreen: Error fetching pending attempts: $e');
@@ -48,11 +51,11 @@ class _SyncStatusScreenState extends State<SyncStatusScreen> {
   }
 
   Future<void> _syncData() async {
-    if (_isSyncing) return;
+    if (_isSyncing) return; // Prevent multiple syncs at once
 
     setState(() {
       _isSyncing = true;
-      _errorMessage = null;
+      _statusMessage = null; // Clear previous messages
     });
 
     if (_pendingAttempts.isEmpty) {
@@ -69,7 +72,9 @@ class _SyncStatusScreenState extends State<SyncStatusScreen> {
 
       if (result['success']) {
         print('SyncStatusScreen: Quiz attempts uploaded successfully. Updating local status...');
+        // Mark synced attempts as SYNCED in local DB
         for (var attempt in _pendingAttempts) {
+          // The copyWith method is now available via the extension defined in quiz_attempt.dart
           await _databaseService.updateQuizAttempt(attempt.copyWith(
             syncedAt: DateTime.now(),
             syncStatus: 'SYNCED',
@@ -80,23 +85,23 @@ class _SyncStatusScreenState extends State<SyncStatusScreen> {
         );
         print('SyncStatusScreen: Local sync statuses updated.');
       } else {
-        _errorMessage = result['message'] ?? 'Failed to sync data.';
+        _statusMessage = result['message'] ?? 'Failed to sync data.';
         ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text(_errorMessage!)),
+          SnackBar(content: Text(_statusMessage!)),
         );
-        print('SyncStatusScreen: Sync failed: $_errorMessage');
+        print('SyncStatusScreen: Sync failed: $_statusMessage');
       }
     } catch (e) {
-      _errorMessage = 'Network error during sync: $e';
+      _statusMessage = 'Network error during sync: $e';
       ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text(_errorMessage!)),
+        SnackBar(content: Text(_statusMessage!)),
       );
       print('SyncStatusScreen: Network error during sync: $e');
     } finally {
       setState(() {
         _isSyncing = false;
       });
-      await _fetchPendingAttempts();
+      await _loadPendingAttempts(); // Reload attempts to reflect changes
     }
   }
 
@@ -139,11 +144,11 @@ class _SyncStatusScreenState extends State<SyncStatusScreen> {
                       ),
                     ),
             ),
-            if (_errorMessage != null)
+            if (_statusMessage != null && _pendingAttempts.isNotEmpty) // Show message only if there are pending attempts
               Padding(
                 padding: const EdgeInsets.symmetric(horizontal: 28.0, vertical: 15.0), // Increased padding
                 child: Text(
-                  _errorMessage!,
+                  _statusMessage!,
                   style: const TextStyle(color: Colors.redAccent, fontSize: 17, fontWeight: FontWeight.w700), // Bolder, larger error text
                   textAlign: TextAlign.center,
                 ),
@@ -195,7 +200,8 @@ class _SyncStatusScreenState extends State<SyncStatusScreen> {
                                       style: TextStyle(fontWeight: FontWeight.bold, fontSize: 18, color: Colors.deepPurple.shade800), // Bolder, larger, darker purple
                                     ),
                                     SizedBox(height: 10),
-                                    Text('Question UUID: ${attempt.questionUuid.substring(0, 8)}...', style: TextStyle(fontSize: 16, color: Colors.grey.shade900)),
+                                    Text('Lesson: ${attempt.lessonTitle ?? 'N/A'}', style: TextStyle(fontSize: 16, color: Colors.grey.shade900)),
+                                    Text('Question: ${attempt.questionTextPreview ?? 'N/A'}', style: TextStyle(fontSize: 16, color: Colors.grey.shade900)),
                                     Text('Submitted: "${attempt.submittedAnswer}"', style: TextStyle(fontSize: 16, color: Colors.grey.shade900)),
                                     Text('Correct: ${attempt.isCorrect ? 'Yes' : 'No'}', style: TextStyle(fontSize: 16, color: Colors.grey.shade900)),
                                     Text('Score: ${attempt.score.toStringAsFixed(1)}', style: TextStyle(fontSize: 16, color: Colors.grey.shade900)),
@@ -212,39 +218,6 @@ class _SyncStatusScreenState extends State<SyncStatusScreen> {
           ],
         ),
       ),
-    );
-  }
-}
-
-// Extension to allow copying QuizAttempt for immutability
-extension QuizAttemptCopyWith on QuizAttempt {
-  QuizAttempt copyWith({
-    String? uuid,
-    int? studentUserId,
-    String? questionUuid,
-    String? submittedAnswer,
-    bool? isCorrect,
-    double? score,
-    String? aiFeedbackText,
-    Map<String, dynamic>? rawAiResponse,
-    DateTime? attemptTimestamp,
-    DateTime? syncedAt,
-    String? syncStatus,
-    String? deviceId,
-  }) {
-    return QuizAttempt(
-      uuid: uuid ?? this.uuid,
-      studentUserId: studentUserId ?? this.studentUserId,
-      questionUuid: questionUuid ?? this.questionUuid,
-      submittedAnswer: submittedAnswer ?? this.submittedAnswer,
-      isCorrect: isCorrect ?? this.isCorrect,
-      score: score ?? this.score,
-      aiFeedbackText: aiFeedbackText ?? this.aiFeedbackText,
-      rawAiResponse: rawAiResponse ?? this.rawAiResponse,
-      attemptTimestamp: attemptTimestamp ?? this.attemptTimestamp,
-      syncedAt: syncedAt ?? this.syncedAt,
-      syncStatus: syncStatus ?? this.syncStatus,
-      deviceId: deviceId ?? this.deviceId,
     );
   }
 }

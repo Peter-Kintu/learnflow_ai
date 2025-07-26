@@ -32,150 +32,125 @@ class DatabaseService {
   // Initialize the database
   Future<Database> _initDatabase() async {
     try {
-      print('DatabaseService:_initDatabase: Attempting to get databases path...');
-      final databasePath = await getDatabasesPath();
-      print('DatabaseService:_initDatabase: Got databases path: $databasePath');
-      final path = join(databasePath, 'learnflow_ai.db'); // Database file name
-      print('DatabaseService:_initDatabase: Full database path: $path');
+      print('DatabaseService: _initDatabase() called.');
+      String databasesPath = await getDatabasesPath();
+      String path = join(databasesPath, 'learnflow_ai.db');
+      print('DatabaseService: Database path: $path');
 
-      print('DatabaseService:_initDatabase: Attempting to open database...');
-      final db = await openDatabase(
+      return await openDatabase(
         path,
-        version: 1, // Database version
-        onCreate: _onCreate, // Callback when the database is first created
-        onUpgrade: _onUpgrade, // Callback when the database needs to be upgraded
+        version: 1, // Increment version if you make schema changes in the future
+        onCreate: (db, version) async {
+          print('DatabaseService: onCreate called. Creating tables...');
+          // Create User table
+          await db.execute('''
+            CREATE TABLE users(
+              id INTEGER PRIMARY KEY,
+              username TEXT,
+              email TEXT,
+              is_staff INTEGER
+            )
+          ''');
+          print('Table "users" created.');
+
+          // Create Student table
+          await db.execute('''
+            CREATE TABLE students(
+              user_id INTEGER PRIMARY KEY,
+              student_id_code TEXT,
+              grade_level TEXT,
+              class_name TEXT,
+              date_registered TEXT,
+              last_device_sync TEXT,
+              gender TEXT,
+              date_of_birth TEXT,
+              school_name TEXT,
+              wallet_address TEXT,
+              FOREIGN KEY (user_id) REFERENCES users (id) ON DELETE CASCADE
+            )
+          ''');
+          print('Table "students" created.');
+
+          // Create Lesson table
+          await db.execute('''
+            CREATE TABLE lessons(
+              uuid TEXT PRIMARY KEY,
+              title TEXT,
+              description TEXT,
+              subject TEXT,
+              difficulty_level TEXT,
+              version INTEGER,
+              created_at TEXT,
+              updated_at TEXT,
+              lesson_file TEXT -- ADDED THIS COLUMN
+            )
+          ''');
+          print('Table "lessons" created.');
+
+          // Create Question table
+          await db.execute('''
+            CREATE TABLE questions(
+              uuid TEXT PRIMARY KEY,
+              lesson_uuid TEXT,
+              question_text TEXT,
+              question_type TEXT,
+              options TEXT, -- Stored as JSON string
+              correct_answer TEXT,
+              difficulty_level TEXT,
+              ai_generated_feedback TEXT,
+              FOREIGN KEY (lesson_uuid) REFERENCES lessons (uuid) ON DELETE CASCADE
+            )
+          ''');
+          print('Table "questions" created.');
+
+          // Create QuizAttempt table
+          await db.execute('''
+            CREATE TABLE quiz_attempts(
+              uuid TEXT PRIMARY KEY,
+              student_user_id INTEGER,
+              student_id_code TEXT,
+              question_uuid TEXT,
+              submitted_answer TEXT,
+              is_correct INTEGER,
+              score REAL,
+              ai_feedback_text TEXT,
+              raw_ai_response TEXT,
+              attempt_timestamp TEXT,
+              synced_at TEXT,
+              sync_status TEXT,
+              device_id TEXT,
+              lesson_title TEXT,
+              question_text_preview TEXT,
+              FOREIGN KEY (student_user_id) REFERENCES students (user_id) ON DELETE CASCADE,
+              FOREIGN KEY (question_uuid) REFERENCES questions (uuid) ON DELETE CASCADE
+            )
+          ''');
+          print('Table "quiz_attempts" created.');
+
+          // Create StudentProgress table
+          await db.execute('''
+            CREATE TABLE student_progress(
+              uuid TEXT PRIMARY KEY,
+              student_user_id INTEGER UNIQUE,
+              overall_progress_data TEXT, -- Stored as JSON string
+              last_updated TEXT,
+              FOREIGN KEY (student_user_id) REFERENCES students (user_id) ON DELETE CASCADE
+            )
+          ''');
+          print('Table "student_progress" created.');
+
+          print('DatabaseService: All tables created successfully.');
+        },
+        onUpgrade: (db, oldVersion, newVersion) async {
+          print('DatabaseService: onUpgrade called. Old version: $oldVersion, New version: $newVersion');
+          // In a real app, you'd handle migrations here.
+          // For now, we are recommending clearing app data to force onCreate.
+        },
       );
-      print('DatabaseService:_initDatabase: Database opened successfully.');
-      return db;
-    } catch (e, stacktrace) {
-      print('DatabaseService ERROR in _initDatabase: $e');
-      print('Stacktrace: $stacktrace');
-      rethrow; // Re-throw to make the error visible in the Flutter console
+    } catch (e) {
+      print('DatabaseService: Error initializing database: $e');
+      rethrow; // Rethrow the error to be caught higher up
     }
-  }
-
-  // Create tables when the database is first created
-  Future<void> _onCreate(Database db, int version) async {
-    print('DatabaseService: _onCreate called. Creating tables...');
-
-    try {
-      // Create User table
-      print('DatabaseService:_onCreate: Creating "users" table...');
-      await db.execute('''
-        CREATE TABLE users(
-          id INTEGER PRIMARY KEY,
-          username TEXT NOT NULL UNIQUE,
-          email TEXT,
-          is_staff INTEGER NOT NULL DEFAULT 0
-        )
-      ''');
-      print('DatabaseService:_onCreate: Table "users" created.');
-
-      // Create Student table
-      print('DatabaseService:_onCreate: Creating "students" table...');
-      await db.execute('''
-        CREATE TABLE students(
-          user_id INTEGER PRIMARY KEY,
-          student_id_code TEXT UNIQUE,
-          date_registered TEXT NOT NULL,
-          date_of_birth TEXT,
-          gender TEXT,
-          grade_level TEXT,
-          class_name TEXT,
-          school_name TEXT,
-          last_device_sync TEXT
-        )
-      ''');
-      print('DatabaseService:_onCreate: Table "students" created.');
-
-      // Create Lesson table
-      print('DatabaseService:_onCreate: Creating "lessons" table...');
-      await db.execute('''
-        CREATE TABLE lessons(
-          id INTEGER PRIMARY KEY, -- Added ID for local storage consistency with Django
-          uuid TEXT UNIQUE NOT NULL,
-          title TEXT NOT NULL,
-          description TEXT,
-          subject TEXT,
-          difficulty_level TEXT,
-          prerequisites TEXT, -- Stored as JSON string
-          lesson_file TEXT, -- Changed from lesson_file_url to lesson_file for consistency
-          version INTEGER NOT NULL,
-          created_at TEXT NOT NULL,
-          updated_at TEXT NOT NULL
-        )
-      ''');
-      print('DatabaseService:_onCreate: Table "lessons" created.');
-
-      // Create Question table
-      print('DatabaseService:_onCreate: Creating "questions" table...');
-      await db.execute('''
-        CREATE TABLE questions(
-          uuid TEXT PRIMARY KEY,
-          lesson_uuid TEXT NOT NULL,
-          lesson_id INTEGER, -- Store Django's integer ID for linking
-          question_text TEXT NOT NULL,
-          question_type TEXT NOT NULL,
-          options TEXT, -- Stored as JSON string
-          correct_answer_text TEXT,
-          difficulty_level TEXT,
-          expected_time_seconds INTEGER,
-          created_at TEXT NOT NULL
-        )
-      ''');
-      print('DatabaseService:_onCreate: Table "questions" created.');
-
-      // Create QuizAttempt table
-      print('DatabaseService:_onCreate: Creating "quiz_attempts" table...');
-      await db.execute('''
-        CREATE TABLE quiz_attempts(
-          uuid TEXT PRIMARY KEY,
-          student_user_id INTEGER NOT NULL,
-          student_id_code TEXT, -- ADDED: student_id_code for Django compatibility
-          question_uuid TEXT NOT NULL,
-          submitted_answer TEXT NOT NULL,
-          is_correct INTEGER, -- SQLite stores bool as int (1 for true, 0 for false, NULL for null)
-          score REAL, -- Changed to REAL for double
-          ai_feedback_text TEXT,
-          raw_ai_response TEXT, -- Stored as JSON string
-          attempt_timestamp TEXT NOT NULL,
-          synced_at TEXT,
-          sync_status TEXT NOT NULL DEFAULT 'PENDING', -- 'PENDING', 'SYNCED', 'FAILED'
-          device_id TEXT
-        )
-      ''');
-      print('DatabaseService:_onCreate: Table "quiz_attempts" created.');
-
-      // Create StudentProgress table
-      print('DatabaseService:_onCreate: Creating "student_progress" table...');
-      await db.execute('''
-        CREATE TABLE student_progress(
-          uuid TEXT PRIMARY KEY,
-          student_user_id INTEGER NOT NULL,
-          overall_progress_data TEXT, -- Stored as JSON string
-          last_updated TEXT NOT NULL,
-          completed_lessons TEXT, -- JSON string of completed lesson UUIDs
-          quiz_scores TEXT -- JSON string of quiz scores per lesson/topic
-        )
-      ''');
-      print('DatabaseService:_onCreate: Table "student_progress" created.');
-
-    } catch (e, stacktrace) {
-      print('DatabaseService ERROR in _onCreate: Failed to create tables: $e');
-      print('Stacktrace: $stacktrace');
-      rethrow;
-    }
-    print('DatabaseService: All tables created successfully.');
-  }
-
-  // Handle database upgrades (e.g., adding new tables or columns)
-  Future<void> _onUpgrade(Database db, int oldVersion, int newVersion) async {
-    print('DatabaseService: Database upgraded from version $oldVersion to $newVersion');
-    // Implement migration logic here if your database schema changes in future versions.
-    // For example:
-    // if (oldVersion < 2) {
-    //   await db.execute("ALTER TABLE lessons ADD COLUMN new_column TEXT;");
-    // }
   }
 
   // --- CRUD Operations for User ---
@@ -222,25 +197,12 @@ class DatabaseService {
     return await db.insert('students', student.toMap(), conflictAlgorithm: ConflictAlgorithm.replace);
   }
 
-  Future<Student?> getStudentByUserId(int userId) async {
+  Future<Student?> getStudent(int userId) async {
     final db = await database;
     final List<Map<String, dynamic>> maps = await db.query(
       'students',
       where: 'user_id = ?',
       whereArgs: [userId],
-    );
-    if (maps.isNotEmpty) {
-      return Student.fromMap(maps.first);
-    }
-    return null;
-  }
-
-  Future<Student?> getStudentByStudentIdCode(String studentIdCode) async {
-    final db = await database;
-    final List<Map<String, dynamic>> maps = await db.query(
-      'students',
-      where: 'student_id_code = ?',
-      whereArgs: [studentIdCode],
     );
     if (maps.isNotEmpty) {
       return Student.fromMap(maps.first);
@@ -258,13 +220,22 @@ class DatabaseService {
     );
   }
 
+  Future<int> deleteStudent(int userId) async {
+    final db = await database;
+    return await db.delete(
+      'students',
+      where: 'user_id = ?',
+      whereArgs: [userId],
+    );
+  }
+
   // --- CRUD Operations for Lesson ---
   Future<int> insertLesson(Lesson lesson) async {
     final db = await database;
     return await db.insert('lessons', lesson.toMap(), conflictAlgorithm: ConflictAlgorithm.replace);
   }
 
-  Future<List<Lesson>> getAllLessons() async {
+  Future<List<Lesson>> getLessons() async {
     final db = await database;
     final List<Map<String, dynamic>> maps = await db.query('lessons');
     return List.generate(maps.length, (i) {
@@ -272,7 +243,7 @@ class DatabaseService {
     });
   }
 
-  Future<Lesson?> getLessonByUuid(String uuid) async {
+  Future<Lesson?> getLesson(String uuid) async {
     final db = await database;
     final List<Map<String, dynamic>> maps = await db.query(
       'lessons',
@@ -307,7 +278,12 @@ class DatabaseService {
   // --- CRUD Operations for Question ---
   Future<int> insertQuestion(Question question) async {
     final db = await database;
-    return await db.insert('questions', question.toMap(), conflictAlgorithm: ConflictAlgorithm.replace);
+    // Convert options list to JSON string for storage
+    final Map<String, dynamic> data = question.toMap();
+    if (question.options != null) {
+      data['options'] = jsonEncode(question.options);
+    }
+    return await db.insert('questions', data, conflictAlgorithm: ConflictAlgorithm.replace);
   }
 
   Future<List<Question>> getQuestionsForLesson(String lessonUuid) async {
@@ -316,14 +292,25 @@ class DatabaseService {
       'questions',
       where: 'lesson_uuid = ?',
       whereArgs: [lessonUuid],
-      orderBy: 'created_at ASC', // Order by creation time
     );
     return List.generate(maps.length, (i) {
-      return Question.fromMap(maps[i]);
+      // Decode options JSON string back to List<String>
+      final Map<String, dynamic> map = Map<String, dynamic>.from(maps[i]);
+      if (map['options'] != null && map['options'] is String) {
+        try {
+          map['options'] = List<String>.from(jsonDecode(map['options']));
+        } catch (e) {
+          print('Error decoding options JSON: $e for question ${map['uuid']}');
+          map['options'] = <String>[]; // Default to empty list on error
+        }
+      } else {
+        map['options'] = <String>[]; // Ensure it's a list even if null
+      }
+      return Question.fromMap(map);
     });
   }
 
-  Future<Question?> getQuestionByUuid(String uuid) async {
+  Future<Question?> getQuestion(String uuid) async {
     final db = await database;
     final List<Map<String, dynamic>> maps = await db.query(
       'questions',
@@ -331,18 +318,42 @@ class DatabaseService {
       whereArgs: [uuid],
     );
     if (maps.isNotEmpty) {
-      return Question.fromMap(maps.first);
+      final Map<String, dynamic> map = Map<String, dynamic>.from(maps.first);
+      if (map['options'] != null && map['options'] is String) {
+        try {
+          map['options'] = List<String>.from(jsonDecode(map['options']));
+        } catch (e) {
+          print('Error decoding options JSON: $e for question ${map['uuid']}');
+          map['options'] = <String>[];
+        }
+      } else {
+        map['options'] = <String>[];
+      }
+      return Question.fromMap(map);
     }
     return null;
   }
 
   Future<int> updateQuestion(Question question) async {
     final db = await database;
+    final Map<String, dynamic> data = question.toMap();
+    if (question.options != null) {
+      data['options'] = jsonEncode(question.options);
+    }
     return await db.update(
       'questions',
-      question.toMap(),
+      data,
       where: 'uuid = ?',
       whereArgs: [question.uuid],
+    );
+  }
+
+  Future<int> deleteQuestion(String uuid) async {
+    final db = await database;
+    return await db.delete(
+      'questions',
+      where: 'uuid = ?',
+      whereArgs: [uuid],
     );
   }
 
@@ -350,6 +361,19 @@ class DatabaseService {
   Future<int> insertQuizAttempt(QuizAttempt attempt) async {
     final db = await database;
     return await db.insert('quiz_attempts', attempt.toMap(), conflictAlgorithm: ConflictAlgorithm.replace);
+  }
+
+  Future<List<QuizAttempt>> getQuizAttemptsByStudent(int studentUserId) async {
+    final db = await database;
+    final List<Map<String, dynamic>> maps = await db.query(
+      'quiz_attempts',
+      where: 'student_user_id = ?',
+      whereArgs: [studentUserId],
+      orderBy: 'attempt_timestamp DESC',
+    );
+    return List.generate(maps.length, (i) {
+      return QuizAttempt.fromMap(maps[i]);
+    });
   }
 
   Future<List<QuizAttempt>> getPendingQuizAttempts() async {
@@ -365,17 +389,17 @@ class DatabaseService {
     });
   }
 
-  Future<List<QuizAttempt>> getAllQuizAttemptsForStudent(int studentUserId) async {
+  Future<QuizAttempt?> getQuizAttempt(String uuid) async {
     final db = await database;
     final List<Map<String, dynamic>> maps = await db.query(
       'quiz_attempts',
-      where: 'student_user_id = ?',
-      whereArgs: [studentUserId],
-      orderBy: 'attempt_timestamp DESC',
+      where: 'uuid = ?',
+      whereArgs: [uuid],
     );
-    return List.generate(maps.length, (i) {
-      return QuizAttempt.fromMap(maps[i]);
-    });
+    if (maps.isNotEmpty) {
+      return QuizAttempt.fromMap(maps.first);
+    }
+    return null;
   }
 
   Future<int> updateQuizAttempt(QuizAttempt attempt) async {
@@ -400,7 +424,12 @@ class DatabaseService {
   // --- CRUD Operations for StudentProgress ---
   Future<int> insertStudentProgress(StudentProgress progress) async {
     final db = await database;
-    return await db.insert('student_progress', progress.toMap(), conflictAlgorithm: ConflictAlgorithm.replace);
+    final Map<String, dynamic> data = progress.toMap();
+    // Convert overall_progress_data to JSON string for storage
+    if (progress.overallProgressData != null) {
+      data['overall_progress_data'] = jsonEncode(progress.overallProgressData);
+    }
+    return await db.insert('student_progress', data, conflictAlgorithm: ConflictAlgorithm.replace);
   }
 
   Future<StudentProgress?> getStudentProgress(int studentUserId) async {
@@ -411,16 +440,32 @@ class DatabaseService {
       whereArgs: [studentUserId],
     );
     if (maps.isNotEmpty) {
-      return StudentProgress.fromMap(maps.first);
+      final Map<String, dynamic> map = Map<String, dynamic>.from(maps.first);
+      // Decode overall_progress_data JSON string back to Map
+      if (map['overall_progress_data'] != null && map['overall_progress_data'] is String) {
+        try {
+          map['overall_progress_data'] = jsonDecode(map['overall_progress_data']);
+        } catch (e) {
+          print('Error decoding overall_progress_data JSON: $e for student ${map['student_user_id']}');
+          map['overall_progress_data'] = {}; // Default to empty map on error
+        }
+      } else {
+        map['overall_progress_data'] = {}; // Ensure it's a map even if null
+      }
+      return StudentProgress.fromMap(map);
     }
     return null;
   }
 
   Future<int> updateStudentProgress(StudentProgress progress) async {
     final db = await database;
+    final Map<String, dynamic> data = progress.toMap();
+    if (progress.overallProgressData != null) {
+      data['overall_progress_data'] = jsonEncode(progress.overallProgressData);
+    }
     return await db.update(
       'student_progress',
-      progress.toMap(),
+      data,
       where: 'uuid = ?',
       whereArgs: [progress.uuid],
     );
@@ -433,12 +478,5 @@ class DatabaseService {
       where: 'uuid = ?',
       whereArgs: [uuid],
     );
-  }
-
-  // Close the database (important for clean shutdown)
-  Future<void> close() async {
-    final db = await database;
-    await db.close();
-    _database = null; // Clear the instance
   }
 }

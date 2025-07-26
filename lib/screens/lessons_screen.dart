@@ -43,7 +43,8 @@ class _LessonsScreenState extends State<LessonsScreen> {
       print('LessonsScreen: Fetched current user: ${_currentUser?.username}, isStaff: ${_currentUser?.isStaff}');
 
       print('LessonsScreen: Attempting to load lessons from local database...');
-      List<Lesson> localLessons = await _databaseService.getAllLessons();
+      // CORRECTED: Changed getAllLessons to getLessons
+      List<Lesson> localLessons = await _databaseService.getLessons();
 
       if (localLessons.isNotEmpty) {
         setState(() {
@@ -51,10 +52,10 @@ class _LessonsScreenState extends State<LessonsScreen> {
           _isLoading = false;
         });
         print('LessonsScreen: Loaded ${localLessons.length} lessons from local database.');
-        _fetchLessonsFromApi(backgroundSync: true);
+        _fetchLessonsFromApi(backgroundSync: true); // Sync with API in background
       } else {
         print('LessonsScreen: No local lessons found. Fetching from API...');
-        await _fetchLessonsFromApi(backgroundSync: false);
+        await _fetchLessonsFromApi(backgroundSync: false); // Fetch from API and wait
       }
     } catch (e) {
       setState(() {
@@ -127,7 +128,7 @@ class _LessonsScreenState extends State<LessonsScreen> {
         elevation: 0,
         actions: [
           // Only show these buttons if the current user is staff
-          if (_currentUser != null) ...[
+          if (_currentUser != null && _currentUser!.isStaff) ...[ // Ensure isStaff check
             IconButton(
               icon: const Icon(Icons.web_asset_rounded, size: 30), // Larger, rounded icon
               tooltip: 'Go to Teacher Dashboard (Web)',

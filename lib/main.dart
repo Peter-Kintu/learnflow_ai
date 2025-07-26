@@ -1,9 +1,10 @@
 // learnflow_ai/flutter_app/lib/main.dart
 
 import 'package:flutter/material.dart';
-import 'package:learnflow_ai/screens/home_screen.dart'; // Ensure HomeScreen is imported
+import 'package:learnflow_ai/screens/home_screen.dart';
+import 'package:learnflow_ai/screens/auth_screen.dart'; // Import AuthScreen
 import 'package:learnflow_ai/services/api_service.dart';
-import 'package:learnflow_ai/services/database_service.dart'; // Import DatabaseService
+import 'package:learnflow_ai/services/database_service.dart';
 
 // Conditional import for sqflite_common_ffi for web/desktop
 import 'dart:io' show Platform;
@@ -33,7 +34,6 @@ void main() async {
   }
 
   // ApiService is now initialized in its constructor, which loads the token.
-  // No explicit 'init()' call is needed here anymore.
   final ApiService apiService = ApiService(); // Create instance
 
   // Initialize DatabaseService
@@ -43,20 +43,23 @@ void main() async {
   await databaseService.database; // Accessing the getter ensures initialization
   print('main(): DatabaseService initialized successfully.');
 
-  // IMPORTANT FOR HACKATHON DEMO:
-  // We are directly navigating to HomeScreen, bypassing authentication.
-  // In a real app, you would check authentication status here and navigate conditionally.
-  print('main(): Bypassing authentication for hackathon demo. Directly navigating to HomeScreen.');
+  // Check if a user is already logged in (has a valid token)
+  // This will try to load the token from shared preferences.
+  // If no token, _authToken will be null, and fetchCurrentUser will return null.
+  final currentUser = await apiService.fetchCurrentUser();
+  final bool isLoggedIn = currentUser != null;
 
-  runApp(const MyApp());
+  runApp(MyApp(isLoggedIn: isLoggedIn));
 }
 
 class MyApp extends StatelessWidget {
-  const MyApp({super.key}); // Removed isLoggedIn as it's no longer used for initial route decision
+  final bool isLoggedIn; // Pass the login status to MyApp
+
+  const MyApp({super.key, required this.isLoggedIn});
 
   @override
   Widget build(BuildContext context) {
-    print('MyApp build: Directly rendering HomeScreen for demo.');
+    print('MyApp build: isLoggedIn: $isLoggedIn');
     return MaterialApp(
       title: 'LearnFlow AI',
       debugShowCheckedModeBanner: false, // Hide the debug banner
@@ -109,8 +112,8 @@ class MyApp extends StatelessWidget {
         ),
         // Add more theme properties as needed for consistency
       ),
-      // Directly set home to HomeScreen to bypass authentication for hackathon
-      home: const HomeScreen(),
+      // Conditionally navigate based on login status
+      home: isLoggedIn ? const HomeScreen() : const AuthScreen(),
     );
   }
 }

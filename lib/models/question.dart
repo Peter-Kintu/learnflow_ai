@@ -1,93 +1,81 @@
 // learnflow_ai/flutter_app/lib/models/question.dart
 
+import 'dart:convert'; // For JSON encoding/decoding
+
 class Question {
-  final String uuid; // UUID from Django
-  final String lessonUuid; // UUID of the associated lesson
-  final int? lessonId; // ADDED: Django's integer primary key for the lesson
+  final String uuid;
+  final String lessonUuid; // This is the field that expects the UUID string
   final String questionText;
   final String questionType; // 'MCQ' or 'SA'
-  final List<String>? options; // For MCQs
-  final String? correctAnswerText; // For MCQs or keywords for SA
-  final String? difficultyLevel;
-  final int? expectedTimeSeconds;
-  final DateTime createdAt;
+  final List<String>? options; // For MCQ, stored as JSON string in DB
+  final String correctAnswerText;
+  final String difficultyLevel;
+  final String? aiGeneratedFeedback; // Added this field
 
   Question({
     required this.uuid,
     required this.lessonUuid,
-    this.lessonId, // ADDED
     required this.questionText,
     required this.questionType,
     this.options,
-    this.correctAnswerText,
-    this.difficultyLevel,
-    this.expectedTimeSeconds,
-    required this.createdAt,
+    required this.correctAnswerText,
+    required this.difficultyLevel,
+    this.aiGeneratedFeedback, // Include in constructor
   });
 
-  factory Question.fromJson(Map<String, dynamic> json) {
-    return Question(
-      uuid: json['uuid'],
-      lessonUuid: json['lesson'].toString(), // Still parsing as string for consistency in Flutter model
-      lessonId: json['lesson'] is int ? json['lesson'] : null, // ADDED: Parse integer ID if available
-      questionText: json['question_text'],
-      questionType: json['question_type'],
-      options: json['options'] != null
-          ? List<String>.from(json['options'])
-          : null,
-      correctAnswerText: json['correct_answer_text'],
-      difficultyLevel: json['difficulty_level'],
-      expectedTimeSeconds: json['expected_time_seconds'],
-      createdAt: DateTime.parse(json['created_at']),
-    );
-  }
-
-  Map<String, dynamic> toJson() {
-    return {
-      'uuid': uuid,
-      // IMPORTANT: Send the integer 'lessonId' if available, otherwise fallback to 'lessonUuid' (though Django expects ID)
-      'lesson': lessonId ?? lessonUuid, // Use lessonId (int) if present, else lessonUuid (str)
-      'question_text': questionText,
-      'question_type': questionType,
-      'options': options,
-      'correct_answer_text': correctAnswerText,
-      'difficulty_level': difficultyLevel,
-      'expected_time_seconds': expectedTimeSeconds,
-      'created_at': createdAt.toIso8601String(),
-    };
-  }
-
-  // Method to convert to a format suitable for local storage (SQLite)
+  // Convert a Question object into a Map object (for SQLite)
   Map<String, dynamic> toMap() {
     return {
       'uuid': uuid,
       'lesson_uuid': lessonUuid,
-      'lesson_id': lessonId, // Include for local storage
       'question_text': questionText,
       'question_type': questionType,
-      'options': options != null ? options!.join('|||') : null, // Use a unique separator
-      'correct_answer_text': correctAnswerText,
+      'options': options != null ? jsonEncode(options) : null, // Store as JSON string
+      'correct_answer': correctAnswerText,
       'difficulty_level': difficultyLevel,
-      'expected_time_seconds': expectedTimeSeconds,
-      'created_at': createdAt.toIso8601String(),
+      'ai_generated_feedback': aiGeneratedFeedback, // Include in map
     };
   }
 
-  // Method to create from a map (for local storage retrieval)
+  // Convert a Map object into a Question object (from SQLite)
   factory Question.fromMap(Map<String, dynamic> map) {
     return Question(
-      uuid: map['uuid'],
-      lessonUuid: map['lesson_uuid'],
-      lessonId: map['lesson_id'], // Parse from map
-      questionText: map['question_text'],
-      questionType: map['question_type'],
-      options: map['options'] != null
-          ? (map['options'] as String).split('|||')
-          : null,
-      correctAnswerText: map['correct_answer_text'],
-      difficultyLevel: map['difficulty_level'],
-      expectedTimeSeconds: map['expected_time_seconds'],
-      createdAt: DateTime.parse(map['created_at']),
+      uuid: map['uuid'] as String,
+      lessonUuid: map['lesson_uuid'] as String,
+      questionText: map['question_text'] as String,
+      questionType: map['question_type'] as String,
+      options: map['options'] != null ? List<String>.from(jsonDecode(map['options'] as String)) : null,
+      correctAnswerText: map['correct_answer'] as String,
+      difficultyLevel: map['difficulty_level'] as String,
+      aiGeneratedFeedback: map['ai_generated_feedback'] as String?, // Retrieve from map
+    );
+  }
+
+  // Convert a Question object into a JSON object (for API)
+  Map<String, dynamic> toJson() {
+    return {
+      'uuid': uuid,
+      'lesson_uuid': lessonUuid,
+      'question_text': questionText,
+      'question_type': questionType,
+      'options': options,
+      'correct_answer_text': correctAnswerText, // Use backend's field name
+      'difficulty_level': difficultyLevel,
+      'ai_generated_feedback': aiGeneratedFeedback, // Include in JSON
+    };
+  }
+
+  // Factory constructor to create a Question from JSON (from API)
+  factory Question.fromJson(Map<String, dynamic> json) {
+    return Question(
+      uuid: json['uuid'] as String,
+      lessonUuid: json['lesson_uuid'] as String, // This will now correctly map to the new field from Django
+      questionText: json['question_text'] as String,
+      questionType: json['question_type'] as String,
+      options: (json['options'] as List?)?.map((e) => e as String).toList(),
+      correctAnswerText: json['correct_answer_text'] as String,
+      difficultyLevel: json['difficulty_level'] as String,
+      aiGeneratedFeedback: json['ai_generated_feedback'] as String?,
     );
   }
 }

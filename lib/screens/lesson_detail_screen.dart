@@ -7,7 +7,7 @@ import 'package:learnflow_ai/models/quiz_attempt.dart';
 import 'package:learnflow_ai/services/api_service.dart';
 import 'package:learnflow_ai/services/database_service.dart';
 import 'package:learnflow_ai/models/student.dart';
-import 'package:uuid/uuid.dart';
+import 'package:uuid/uuid.dart'; // For generating UUIDs
 
 class LessonDetailScreen extends StatefulWidget {
   final Lesson lesson;
@@ -36,6 +36,7 @@ class _LessonDetailScreenState extends State<LessonDetailScreen> {
 
   @override
   void dispose() {
+    // Dispose all TextEditingControllers when the widget is removed from the tree
     _questionStates.values.forEach((state) => state.textController.dispose());
     super.dispose();
   }
@@ -47,14 +48,22 @@ class _LessonDetailScreenState extends State<LessonDetailScreen> {
     });
     try {
       final int? currentUserId = await _apiService.getCurrentUserId();
-      if (currentUserId != null) {
-        _currentStudent = await _databaseService.getStudentByUserId(currentUserId);
-        if (_currentStudent != null) {
-          print('LessonDetailScreen: Student profile loaded from local DB: ${_currentStudent?.user?.username}, ID Code: ${_currentStudent?.studentIdCode}');
-        }
+      if (currentUserId == null) {
+        setState(() {
+          _errorMessage = 'User not logged in. Please log in again.';
+          _isLoading = false;
+        });
+        return;
+      }
+
+      // Fetch student profile locally first
+      _currentStudent = await _databaseService.getStudent(currentUserId);
+      if (_currentStudent != null) {
+        print('LessonDetailScreen: Student profile loaded from local DB: ${_currentStudent?.user?.username}, ID Code: ${_currentStudent?.studentIdCode}');
       }
 
       if (_currentStudent == null || _currentStudent!.studentIdCode == null) {
+        // If not found locally or studentIdCode is missing, try API
         final fetchedStudent = await _apiService.fetchCurrentStudentProfile();
         if (fetchedStudent == null) {
           _errorMessage = 'Could not fetch student profile. Cannot record quiz attempts.';
@@ -65,15 +74,17 @@ class _LessonDetailScreenState extends State<LessonDetailScreen> {
         _currentStudent = fetchedStudent;
         print('LessonDetailScreen: Student profile loaded from API: ${_currentStudent?.user?.username}, ID Code: ${_currentStudent?.studentIdCode}');
 
+        // If studentIdCode is still null/empty after API fetch, generate a local one
         if (_currentStudent!.studentIdCode == null || _currentStudent!.studentIdCode!.isEmpty) {
           final generatedId = 'LOCAL_STUDENT_${_currentStudent!.userId}_${const Uuid().v4().substring(0, 8)}';
           _currentStudent = _currentStudent!.copyWith(studentIdCode: generatedId);
           print('LessonDetailScreen: Generated local student_id_code: $generatedId as Django provided null.');
 
-          await _databaseService.updateStudent(_currentStudent!);
+          await _databaseService.updateStudent(_currentStudent!); // Update local DB with generated ID
           print('LessonDetailScreen: Updated local student profile with generated ID code.');
         }
       } else {
+         // If a student profile exists locally, check if the API has a more recent studentIdCode
          final fetchedStudent = await _apiService.fetchCurrentStudentProfile();
          if (fetchedStudent != null && fetchedStudent.studentIdCode != null && fetchedStudent.studentIdCode!.isNotEmpty) {
            if (_currentStudent!.studentIdCode != fetchedStudent.studentIdCode) {
@@ -84,20 +95,25 @@ class _LessonDetailScreenState extends State<LessonDetailScreen> {
          }
       }
 
+      // Load questions from local database first
+      print('LessonDetailScreen: Attempting to load questions from local database...');
       List<Question> localQuestions = await _databaseService.getQuestionsForLesson(widget.lesson.uuid);
 
       if (localQuestions.isNotEmpty) {
         setState(() {
           _questions = localQuestions;
           _isLoading = false;
+          // Initialize question states for all questions
           for (var q in _questions) {
             _questionStates[q.uuid] = QuestionAttemptState();
           }
         });
         print('LessonDetailScreen: Loaded ${localQuestions.length} questions from local database.');
+        // Fetch from API in background to ensure data is fresh
         _fetchQuestionsFromApi(backgroundSync: true);
       } else {
         print('LessonDetailScreen: No local questions found. Fetching from API...');
+        // If no local questions, fetch from API and wait for it
         await _fetchQuestionsFromApi(backgroundSync: false);
       }
     } catch (e) {
@@ -115,7 +131,8 @@ class _LessonDetailScreenState extends State<LessonDetailScreen> {
       if (fetchedQuestions.isNotEmpty) {
         setState(() {
           _questions = fetchedQuestions;
-          if (!backgroundSync) _isLoading = false;
+          if (!backgroundSync) _isLoading = false; // Only set loading to false if not background sync
+          // Initialize question states for newly fetched questions
           for (var q in _questions) {
             if (!_questionStates.containsKey(q.uuid)) {
               _questionStates[q.uuid] = QuestionAttemptState();
@@ -167,6 +184,7 @@ class _LessonDetailScreenState extends State<LessonDetailScreen> {
       state.submittedAnswer = submittedAnswer;
       state.showFeedback = true;
 
+      // Determine correctness and initial feedback/score based on question type
       if (question.questionType == 'MCQ') {
         state.isAnswerCorrect = (submittedAnswer == question.correctAnswerText);
         state.feedbackMessage = state.isAnswerCorrect ? 'Great job! That\'s correct.' : 'Not quite. Review the options carefully.';
@@ -195,16 +213,19 @@ class _LessonDetailScreenState extends State<LessonDetailScreen> {
     final quizAttempt = QuizAttempt(
       uuid: const Uuid().v4(),
       studentUserId: _currentStudent!.userId,
-      studentIdCode: _currentStudent!.studentIdCode,
+      studentIdCode: _currentStudent!.studentIdCode, // Pass the studentIdCode
       questionUuid: question.uuid,
       submittedAnswer: submittedAnswer ?? '',
       isCorrect: _questionStates[question.uuid]!.isAnswerCorrect,
       score: _questionStates[question.uuid]!.feedbackScore?.toDouble() ?? 0.0,
       aiFeedbackText: _questionStates[question.uuid]!.feedbackMessage,
-      rawAiResponse: null,
+      rawAiResponse: null, // Placeholder for actual raw AI response
       attemptTimestamp: DateTime.now(),
-      syncStatus: 'PENDING',
-      deviceId: 'flutter-app-device',
+      syncStatus: 'PENDING', // Mark as pending sync
+      deviceId: 'flutter-app-device', // Placeholder device ID
+      // Add lessonTitle and questionTextPreview for easier display in SyncStatusScreen
+      lessonTitle: widget.lesson.title, // Pass lesson title
+      questionTextPreview: question.questionText.length > 50 ? '${question.questionText.substring(0, 50)}...' : question.questionText, // Pass question text preview
     );
 
     try {
@@ -219,6 +240,30 @@ class _LessonDetailScreenState extends State<LessonDetailScreen> {
         SnackBar(content: Text('Failed to save answer locally: $e')),
       );
     }
+  }
+
+  // Re-added this method
+  void _showCompletionDialog() {
+    showDialog(
+      context: context,
+      barrierDismissible: false, // User must tap button to close
+      builder: (BuildContext context) {
+        return AlertDialog(
+          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
+          title: const Text('Lesson Completed!'),
+          content: const Text('You have completed all questions for this lesson.'),
+          actions: <Widget>[
+            TextButton(
+              child: const Text('Go to Lessons'),
+              onPressed: () {
+                Navigator.of(context).pop(); // Close dialog
+                Navigator.of(context).pop(); // Go back to LessonsScreen
+              },
+            ),
+          ],
+        );
+      },
+    );
   }
 
   @override
@@ -332,7 +377,7 @@ class _LessonDetailScreenState extends State<LessonDetailScreen> {
                               )
                             : ListView.builder(
                                 shrinkWrap: true,
-                                physics: const NeverScrollableScrollPhysics(),
+                                physics: const NeverScrollableScrollPhysics(), // Important to allow parent SingleChildScrollView
                                 itemCount: _questions.length,
                                 itemBuilder: (context, index) {
                                   final question = _questions[index];
@@ -390,7 +435,7 @@ class _LessonDetailScreenState extends State<LessonDetailScreen> {
                                                   value: option,
                                                   groupValue: questionState.selectedOption,
                                                   onChanged: questionState.showFeedback
-                                                      ? null
+                                                      ? null // Disable if feedback is shown
                                                       : (String? value) {
                                                           setState(() {
                                                             questionState.selectedOption = value;
@@ -426,7 +471,7 @@ class _LessonDetailScreenState extends State<LessonDetailScreen> {
                                                 contentPadding: const EdgeInsets.symmetric(vertical: 18, horizontal: 15),
                                               ),
                                               maxLines: 5, // More lines for short answer
-                                              enabled: !questionState.showFeedback,
+                                              enabled: !questionState.showFeedback, // Disable if feedback is shown
                                               onChanged: (text) {
                                                 questionState.submittedAnswer = text;
                                               },
@@ -435,7 +480,7 @@ class _LessonDetailScreenState extends State<LessonDetailScreen> {
 
                                           const SizedBox(height: 25),
 
-                                          if (!questionState.showFeedback)
+                                          if (!questionState.showFeedback) // Only show submit button if feedback is not shown
                                             Center(
                                               child: ElevatedButton(
                                                 onPressed: () {
@@ -467,7 +512,7 @@ class _LessonDetailScreenState extends State<LessonDetailScreen> {
                                               ),
                                             ),
 
-                                          if (questionState.showFeedback)
+                                          if (questionState.showFeedback) // Only show feedback section if feedback is shown
                                             Column(
                                               crossAxisAlignment: CrossAxisAlignment.start,
                                               children: [
@@ -520,6 +565,33 @@ class _LessonDetailScreenState extends State<LessonDetailScreen> {
                                                     )),
                                                   ],
                                                 ),
+                                            const SizedBox(height: 25), // Space before next button
+                                            Center(
+                                              child: ElevatedButton(
+                                                onPressed: () {
+                                                  // Reset state for the current question before moving
+                                                  questionState.showFeedback = false;
+                                                  questionState.selectedOption = null;
+                                                  questionState.textController.clear();
+                                                  questionState.submittedAnswer = null;
+                                                  questionState.isAnswerCorrect = false;
+                                                  questionState.feedbackMessage = null;
+                                                  questionState.feedbackScore = null;
+
+                                                  // Move to the next question or show completion
+                                                  _nextQuestionOrComplete();
+                                                },
+                                                style: ElevatedButton.styleFrom(
+                                                  backgroundColor: Colors.deepPurple.shade700,
+                                                  foregroundColor: Colors.white,
+                                                  padding: const EdgeInsets.symmetric(horizontal: 40, vertical: 18),
+                                                  shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
+                                                  textStyle: const TextStyle(fontSize: 18, fontWeight: FontWeight.bold),
+                                                  elevation: 8,
+                                                ),
+                                                child: Text(index < _questions.length - 1 ? 'Next Question' : 'Finish Lesson'),
+                                              ),
+                                            ),
                                               ],
                                             ),
                                         ],
@@ -534,6 +606,31 @@ class _LessonDetailScreenState extends State<LessonDetailScreen> {
       ),
     );
   }
+
+  // Helper method to navigate to next question or show completion dialog
+  void _nextQuestionOrComplete() {
+    // Find the index of the current question being displayed in the ListView.builder
+    // This assumes the ListView.builder is iterating through _questions in order.
+    final currentQuestion = _questions.firstWhere(
+      (q) => _questionStates.containsKey(q.uuid) && _questionStates[q.uuid]!.showFeedback,
+      orElse: () => _questions.first, // Fallback, though ideally should find it
+    );
+    final currentIndex = _questions.indexOf(currentQuestion);
+
+    if (currentIndex < _questions.length - 1) {
+      // If there are more questions, scroll to the next one.
+      // This is a simplified approach; a PageView or explicit scroll controller
+      // would be more robust for navigating questions.
+      // For now, we'll just re-render and the user can scroll.
+      setState(() {
+        // No explicit index change needed for ListView.builder, just update state
+        // of the current question to hide feedback and allow next interaction.
+      });
+    } else {
+      _showCompletionDialog();
+    }
+  }
+
 
   Widget _buildInfoChip(IconData icon, String text, Color color) {
     return Chip(
@@ -550,6 +647,7 @@ class _LessonDetailScreenState extends State<LessonDetailScreen> {
   }
 }
 
+// Helper class to manage the state of each question attempt
 class QuestionAttemptState {
   String? selectedOption;
   TextEditingController textController = TextEditingController();

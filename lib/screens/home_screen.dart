@@ -8,6 +8,7 @@ import 'package:learnflow_ai/screens/teacher_dashboard_screen.dart';
 import 'package:learnflow_ai/screens/sync_status_screen.dart';
 import 'package:learnflow_ai/screens/wallet_screen.dart'; // Import WalletScreen
 import 'package:url_launcher/url_launcher.dart'; // Keep this import for wallet screen potentially
+import 'package:learnflow_ai/screens/auth_screen.dart'; // Import AuthScreen for logout navigation
 
 class HomeScreen extends StatefulWidget {
   const HomeScreen({super.key});
@@ -70,13 +71,25 @@ class _HomeScreenState extends State<HomeScreen> with SingleTickerProviderStateM
         _isLoading = false;
       });
       if (user == null) {
-        print("No current user found or token invalid. Please log in.");
+        print("No current user found or token invalid. Navigating to AuthScreen.");
+        // If no user is found (e.g., token expired or first launch), navigate to AuthScreen
+        if (mounted) { // Check if the widget is still in the widget tree
+          Navigator.of(context).pushReplacement(
+            MaterialPageRoute(builder: (context) => const AuthScreen()),
+          );
+        }
       }
     } catch (e) {
       print('Error fetching current user: $e');
       setState(() {
         _isLoading = false;
       });
+      // In case of an error, also navigate to AuthScreen
+      if (mounted) {
+        Navigator.of(context).pushReplacement(
+          MaterialPageRoute(builder: (context) => const AuthScreen()),
+        );
+      }
     }
   }
 
@@ -142,7 +155,12 @@ class _HomeScreenState extends State<HomeScreen> with SingleTickerProviderStateM
             onPressed: () async {
               await _apiService.logout();
               print('Logged out.');
-              // For a real app, you'd navigate to AuthScreen here.
+              // Navigate back to AuthScreen after logout
+              if (mounted) {
+                Navigator.of(context).pushReplacement(
+                  MaterialPageRoute(builder: (context) => const AuthScreen()),
+                );
+              }
             },
           ),
         ],
@@ -223,8 +241,12 @@ class _HomeScreenState extends State<HomeScreen> with SingleTickerProviderStateM
               onPressed: () async {
                 await _apiService.logout();
                 Navigator.pop(context); // Close drawer
-                // For a real app, you'd navigate to AuthScreen here.
-                // For this demo, it just clears token and stays on home.
+                // Navigate back to AuthScreen after logout
+                if (mounted) {
+                  Navigator.of(context).pushReplacement(
+                    MaterialPageRoute(builder: (context) => const AuthScreen()),
+                  );
+                }
               },
             ),
           ],

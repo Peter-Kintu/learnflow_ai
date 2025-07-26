@@ -19,19 +19,7 @@ class ApiService {
   String? _authToken;
   int? _currentUserId;
 
-  // IMPORTANT FOR HACKATHON DEMO:
-  // Hardcode a token here for judges to bypass login.
-  // REPLACE 'YOUR_GENERATED_DJANGO_TOKEN_HERE' with the actual token you copied from Django admin.
-  // Make sure there are no extra spaces or hidden characters.
-  static const String _demoAuthToken = '7a22cba24bac92bde8419d8a1fdee152f921188c';
-  // IMPORTANT FOR HACKATHON DEMO:
-  // Hardcode the user ID associated with the _demoAuthToken.
-  // This is crucial for fetching student profiles and recording attempts without a full login flow.
-  static const int _demoUserId = 5; // The initial student ID you identified
-
   ApiService() {
-    // No need to await here, it runs asynchronously in the background
-    // The _ensureToken() method will handle waiting if needed before API calls
     _loadAuthToken();
   }
 
@@ -41,14 +29,8 @@ class ApiService {
     _authToken = prefs.getString('authToken');
     _currentUserId = prefs.getInt('currentUserId');
 
-    // If no token is saved (first run or after logout), use the demo token and ID
-    if (_authToken == null || _currentUserId == null) {
-      _authToken = _demoAuthToken;
-      _currentUserId = _demoUserId;
-      // Save them for persistence across restarts in demo mode, so it's not always "first run"
-      await prefs.setString('authToken', _authToken!);
-      await prefs.setInt('currentUserId', _currentUserId!);
-      print('API Service: Using DEMO Auth Token and User ID: $_authToken, User ID: $_currentUserId');
+    if (_authToken == null) {
+      print('API Service: No Auth Token found in SharedPreferences. User needs to log in.');
     } else {
       print('API Service: Loaded Auth Token from SharedPreferences: $_authToken, User ID: $_currentUserId');
     }
@@ -72,18 +54,13 @@ class ApiService {
     print('API Service: Cleared Auth Token and User ID.');
     try {
       final url = Uri.parse('$_baseUrl/auth/logout/');
-      // Send logout request with the cleared token (which will be null, so no auth header)
-      // This might still result in 401 if the server expects a token even for logout.
-      // Django's logout typically invalidates the token on the server side.
-      await http.post(url, headers: _getHeaders(includeAuth: false)); // Do not include auth for logout
+      await http.post(url, headers: _getHeaders(includeAuth: false));
     } catch (e) {
       print('Error calling Django logout: $e');
     }
   }
 
   Future<void> _ensureToken() async {
-    // This method ensures that _authToken and _currentUserId are populated
-    // before any API call that requires authentication.
     if (_authToken == null || _currentUserId == null) {
       await _loadAuthToken();
     }
@@ -98,6 +75,11 @@ class ApiService {
       headers['Authorization'] = 'Token $_authToken';
     }
     return headers;
+  }
+
+  Future<int?> getCurrentUserId() async {
+    await _ensureToken();
+    return _currentUserId;
   }
 
   // --- Auth Endpoints ---
@@ -191,11 +173,6 @@ class ApiService {
     }
   }
 
-  Future<int?> getCurrentUserId() async {
-    await _ensureToken();
-    return _currentUserId;
-  }
-
   // --- Lesson Endpoints ---
   Future<List<Lesson>> fetchLessons() async {
     await _ensureToken(); // Ensure token is loaded before making the call
@@ -260,8 +237,18 @@ class ApiService {
       final response = await http.get(url, headers: _getHeaders());
       print('API Service: Fetch questions response status: ${response.statusCode}, body: ${response.body}');
       if (response.statusCode == 200) {
-        final Map<String, dynamic> responseData = jsonDecode(response.body);
-        final List<dynamic> data = responseData['results'];
+        final dynamic responseData = jsonDecode(response.body); // Use dynamic to check type
+        List<dynamic> data;
+
+        // Check if the response is a list directly or an object with 'results'
+        if (responseData is List) {
+          data = responseData;
+        } else if (responseData is Map && responseData.containsKey('results')) {
+          data = responseData['results'];
+        } else {
+          print('API Service: Unexpected response structure for questions. Expected List or Map with "results".');
+          return [];
+        }
         return data.map((json) => Question.fromJson(json)).toList();
       } else if (response.statusCode == 401) {
         print('API Service: Authentication failed (401) for questions. Token might be invalid or expired.');
@@ -275,32 +262,34 @@ class ApiService {
     }
   }
 
-  Future<Question?> createQuestion(Question question) async {
+  Future<Map<String, dynamic>> addQuestion(Question question) async {
     await _ensureToken();
-    if (_authToken == null) return null;
+    if (_authToken == null) {
+      return {'success': false, 'message': 'Authentication token not available.'};
+    }
 
     final url = Uri.parse('$_baseUrl/questions/');
-    print('API Service: Creating question: ${question.toJson()}');
+    print('API Service: Adding question to $url');
     try {
       final response = await http.post(
         url,
         headers: _getHeaders(),
-        body: jsonEncode(question.toJson()),
+        body: jsonEncode(question.toJson()), // Convert Question object to JSON
       );
-      print('API Service: Create question response status: ${response.statusCode}, body: ${response.body}');
+      final responseData = jsonDecode(response.body);
+      print('API Service: Add question response status: ${response.statusCode}, body: ${response.body}');
+
       if (response.statusCode == 201) {
-        return Question.fromJson(jsonDecode(response.body));
-      } else if (response.statusCode == 401) {
-        print('API Service: Authentication failed (401) for create question. Token might be invalid or expired.');
-        await logout();
-        return null;
+        return {'success': true, 'message': 'Question added successfully!', 'data': responseData};
+      } else {
+        return {'success': false, 'message': responseData['detail'] ?? 'Failed to add question'};
       }
-      return null;
     } catch (e) {
-      print('Create Question Error: $e');
-      return null;
+      print('API Service: Error adding question: $e');
+      return {'success': false, 'message': 'Network error during adding question: $e'};
     }
   }
+
 
   // --- QuizAttempt Endpoints ---
   Future<Map<String, dynamic>> uploadQuizAttempts(List<QuizAttempt> attempts) async {

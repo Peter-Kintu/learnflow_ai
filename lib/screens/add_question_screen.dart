@@ -4,7 +4,8 @@ import 'package:flutter/material.dart';
 import 'package:learnflow_ai/models/lesson.dart';
 import 'package:learnflow_ai/models/question.dart';
 import 'package:learnflow_ai/services/api_service.dart';
-import 'package:uuid/uuid.dart'; // For generating UUIDs on the client side
+import 'package:learnflow_ai/services/database_service.dart';
+import 'package:uuid/uuid.dart'; // For generating UUIDs
 
 class AddQuestionScreen extends StatefulWidget {
   const AddQuestionScreen({super.key});
@@ -14,135 +15,191 @@ class AddQuestionScreen extends StatefulWidget {
 }
 
 class _AddQuestionScreenState extends State<AddQuestionScreen> {
-  final _formKey = GlobalKey<FormState>();
   final ApiService _apiService = ApiService();
-  final Uuid _uuid = const Uuid(); // Instantiate Uuid
+  final DatabaseService _databaseService = DatabaseService.instance;
 
-  List<Lesson> _lessons = [];
-  bool _isLoadingLessons = true;
-  String? _lessonsErrorMessage;
-
-  Lesson? _selectedLesson;
   final TextEditingController _questionTextController = TextEditingController();
-  String? _questionType; // 'MCQ' or 'SA'
+  final TextEditingController _correctAnswerController = TextEditingController();
   final TextEditingController _optionAController = TextEditingController();
   final TextEditingController _optionBController = TextEditingController();
   final TextEditingController _optionCController = TextEditingController();
   final TextEditingController _optionDController = TextEditingController();
-  final TextEditingController _correctAnswerTextController = TextEditingController();
-  String? _difficultyLevel; // Dropdown for difficulty
-  final TextEditingController _expectedTimeSecondsController = TextEditingController();
 
-  bool _isLoading = false;
+  Lesson? _selectedLesson;
+  List<Lesson> _lessons = [];
+  String? _selectedQuestionType; // 'MCQ' or 'SA'
+  String? _selectedDifficulty; // 'Easy', 'Medium', 'Hard'
+
+  bool _isLoading = true;
+  String? _errorMessage;
+  bool _isSaving = false;
 
   @override
   void initState() {
     super.initState();
-    _fetchLessons(); // Fetch lessons when the screen initializes
+    _loadLessons();
   }
 
   @override
   void dispose() {
     _questionTextController.dispose();
+    _correctAnswerController.dispose();
     _optionAController.dispose();
     _optionBController.dispose();
     _optionCController.dispose();
     _optionDController.dispose();
-    _correctAnswerTextController.dispose();
-    _expectedTimeSecondsController.dispose();
     super.dispose();
   }
 
-  Future<void> _fetchLessons() async {
+  Future<void> _loadLessons() async {
     setState(() {
-      _isLoadingLessons = true;
-      _lessonsErrorMessage = null;
+      _isLoading = true;
+      _errorMessage = null;
     });
     try {
-      final fetchedLessons = await _apiService.fetchLessons();
-      setState(() {
-        _lessons = fetchedLessons;
-        _isLoadingLessons = false;
-      });
+      // First, try to load from local database
+      List<Lesson> localLessons = await _databaseService.getLessons();
+      if (localLessons.isNotEmpty) {
+        setState(() {
+          _lessons = localLessons;
+          _isLoading = false;
+        });
+        print('AddQuestionScreen: Loaded ${localLessons.length} lessons from local DB.');
+        // Fetch from API in background to ensure data is fresh
+        _fetchLessonsFromApi(backgroundSync: true);
+      } else {
+        print('AddQuestionScreen: No local lessons found. Fetching from API...');
+        // If no local lessons, fetch from API and wait for it
+        await _fetchLessonsFromApi(backgroundSync: false);
+      }
     } catch (e) {
       setState(() {
-        _lessonsErrorMessage = 'Failed to load lessons: $e';
-        _isLoadingLessons = false;
+        _errorMessage = 'Failed to load lessons: $e';
+        _isLoading = false;
       });
-      print('Error fetching lessons for question screen: $e');
+      print('AddQuestionScreen: Error loading lessons: $e');
     }
   }
 
-  Future<void> _submitQuestion() async {
-    if (_formKey.currentState!.validate()) {
-      setState(() {
-        _isLoading = true;
-      });
+  Future<void> _fetchLessonsFromApi({bool backgroundSync = false}) async {
+    try {
+      final apiLessons = await _apiService.fetchLessons();
+      if (apiLessons.isNotEmpty) {
+        setState(() {
+          _lessons = apiLessons;
+          if (!backgroundSync) _isLoading = false;
+        });
+        print('AddQuestionScreen: Fetched ${apiLessons.length} lessons from API.');
 
-      List<String>? optionsList;
-      if (_questionType == 'MCQ') {
-        optionsList = [];
-        if (_optionAController.text.isNotEmpty) optionsList.add(_optionAController.text);
-        if (_optionBController.text.isNotEmpty) optionsList.add(_optionBController.text);
-        if (_optionCController.text.isNotEmpty) optionsList.add(_optionCController.text);
-        if (_optionDController.text.isNotEmpty) optionsList.add(_optionDController.text);
-
-        if (optionsList.length < 2) {
-          ScaffoldMessenger.of(context).showSnackBar(
-            const SnackBar(content: Text('MCQ questions require at least two options.')),
-          );
-          setState(() { _isLoading = false; });
-          return;
+        print('AddQuestionScreen: Saving/updating lessons to local database...');
+        for (var lesson in apiLessons) {
+          await _databaseService.insertLesson(lesson);
         }
+        print('AddQuestionScreen: Lessons saved/updated locally.');
+      } else {
+        if (!backgroundSync) {
+          setState(() {
+            _errorMessage = 'No lessons available from API.';
+            _isLoading = false;
+          });
+        }
+        print('AddQuestionScreen: No lessons found from API.');
       }
+    } catch (e) {
+      if (!backgroundSync) {
+        setState(() {
+          _errorMessage = 'Failed to fetch lessons from API: $e';
+          _isLoading = false;
+        });
+      }
+      print('AddQuestionScreen: Error fetching lessons from API: $e');
+    }
+  }
 
-      if (_selectedLesson == null) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(content: Text('Please select a lesson for the question.')),
-        );
-        setState(() { _isLoading = false; });
+  Future<void> _addQuestion() async {
+    if (_selectedLesson == null || _selectedQuestionType == null || _selectedDifficulty == null || _questionTextController.text.isEmpty) {
+      setState(() {
+        _errorMessage = 'Please fill all required fields.';
+      });
+      return;
+    }
+
+    List<String> options = [];
+    if (_selectedQuestionType == 'MCQ') {
+      if (_optionAController.text.isEmpty || _optionBController.text.isEmpty) {
+        setState(() {
+          _errorMessage = 'MCQ questions require at least Option A and Option B.';
+        });
         return;
       }
+      options.add(_optionAController.text);
+      if (_optionBController.text.isNotEmpty) options.add(_optionBController.text);
+      if (_optionCController.text.isNotEmpty) options.add(_optionCController.text);
+      if (_optionDController.text.isNotEmpty) options.add(_optionDController.text);
+    }
 
+    if (_correctAnswerController.text.isEmpty) {
+      setState(() {
+        _errorMessage = 'Please provide a correct answer.';
+      });
+      return;
+    }
+
+    setState(() {
+      _isSaving = true;
+      _errorMessage = null;
+    });
+
+    try {
       final newQuestion = Question(
-        uuid: _uuid.v4(),
-        lessonUuid: _selectedLesson!.uuid,
-        lessonId: _selectedLesson!.id,
+        uuid: const Uuid().v4(),
+        lessonUuid: _selectedLesson!.uuid, // Corrected: use .uuid instead of .id
         questionText: _questionTextController.text,
-        questionType: _questionType!,
-        options: optionsList,
-        correctAnswerText: _correctAnswerTextController.text,
-        difficultyLevel: _difficultyLevel,
-        expectedTimeSeconds: int.tryParse(_expectedTimeSecondsController.text),
-        createdAt: DateTime.now(),
+        questionType: _selectedQuestionType!,
+        options: _selectedQuestionType == 'MCQ' ? options : null,
+        correctAnswerText: _correctAnswerController.text,
+        difficultyLevel: _selectedDifficulty!,
+        aiGeneratedFeedback: null, // AI feedback will be generated on attempt
       );
 
-      final createdQuestion = await _apiService.createQuestion(newQuestion);
-
-      setState(() {
-        _isLoading = false;
-      });
-
-      if (createdQuestion != null) {
+      final result = await _apiService.addQuestion(newQuestion);
+      if (result['success']) {
+        // Also save to local database
+        await _databaseService.insertQuestion(newQuestion);
         ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('Question created successfully!')),
+          const SnackBar(content: Text('Question added successfully!')),
         );
-        _questionTextController.clear();
-        _questionType = null;
-        _optionAController.clear();
-        _optionBController.clear();
-        _optionCController.clear();
-        _optionDController.clear();
-        _correctAnswerTextController.clear();
-        _difficultyLevel = null;
-        _expectedTimeSecondsController.clear();
-        _selectedLesson = null;
+        _clearForm();
       } else {
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(content: Text('Failed to create question. Please try again.')),
-        );
+        setState(() {
+          _errorMessage = result['message'] ?? 'Failed to add question.';
+        });
       }
+    } catch (e) {
+      setState(() {
+        _errorMessage = 'Error adding question: $e';
+      });
+      print('AddQuestionScreen: Error adding question: $e');
+    } finally {
+      setState(() {
+        _isSaving = false;
+      });
     }
+  }
+
+  void _clearForm() {
+    _questionTextController.clear();
+    _correctAnswerController.clear();
+    _optionAController.clear();
+    _optionBController.clear();
+    _optionCController.clear();
+    _optionDController.clear();
+    setState(() {
+      _selectedLesson = null;
+      _selectedQuestionType = null;
+      _selectedDifficulty = null;
+      _errorMessage = null;
+    });
   }
 
   @override
@@ -150,7 +207,7 @@ class _AddQuestionScreenState extends State<AddQuestionScreen> {
     return Scaffold(
       appBar: AppBar(
         title: const Text('Add New Question'),
-        backgroundColor: Colors.deepPurple.shade900, // Even darker purple for app bar
+        backgroundColor: Colors.deepPurple.shade900,
         foregroundColor: Colors.white,
         centerTitle: true,
         elevation: 0,
@@ -158,219 +215,174 @@ class _AddQuestionScreenState extends State<AddQuestionScreen> {
       body: Container(
         decoration: BoxDecoration(
           gradient: LinearGradient(
-            colors: [Colors.deepPurple.shade900, Colors.indigo.shade800, Colors.purple.shade700], // Deeper, richer gradient
+            colors: [Colors.deepPurple.shade900, Colors.indigo.shade800, Colors.purple.shade700],
             begin: Alignment.topCenter,
             end: Alignment.bottomCenter,
           ),
         ),
-        child: Center(
-          child: Padding(
-            padding: const EdgeInsets.all(28.0), // Increased padding
-            child: _isLoadingLessons
-                ? const CircularProgressIndicator(color: Colors.white)
-                : _lessonsErrorMessage != null
-                    ? Center(
-                        child: Text(
-                          _lessonsErrorMessage!,
-                          style: const TextStyle(color: Colors.redAccent, fontSize: 18),
-                          textAlign: TextAlign.center,
-                        ),
-                      )
-                    : Form(
-                        key: _formKey,
-                        child: SingleChildScrollView(
-                          child: Card(
-                            elevation: 16, // More pronounced shadow
-                            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(25)), // Even more rounded corners
-                            color: Colors.white.withOpacity(0.98), // Almost opaque white for crispness
-                            child: Padding(
-                              padding: const EdgeInsets.all(32.0), // Increased padding inside card
-                              child: Column(
-                                crossAxisAlignment: CrossAxisAlignment.start,
-                                mainAxisSize: MainAxisSize.min,
-                                children: [
-                                  Text(
-                                    'Craft a New Practice Question',
-                                    style: TextStyle(
-                                      fontSize: 28, // Larger title
-                                      fontWeight: FontWeight.bold,
-                                      color: Colors.deepPurple.shade900, // Darker title color
-                                    ),
-                                    textAlign: TextAlign.center,
-                                  ),
-                                  const SizedBox(height: 30),
-
-                                  _buildDropdownField<Lesson>(
-                                    'Select Lesson',
-                                    _selectedLesson,
-                                    _lessons,
-                                    (Lesson? newValue) {
-                                      setState(() {
-                                        _selectedLesson = newValue;
-                                      });
-                                    },
-                                    Icons.book_rounded, // Rounded icon
-                                    itemBuilder: (lesson) => Text(lesson.title, style: const TextStyle(color: Colors.black87, fontSize: 17)),
-                                    validatorMessage: 'Please select a lesson',
-                                  ),
-                                  _buildTextField(_questionTextController, 'Question Text', 'Please enter question text', Icons.question_mark_rounded, maxLines: 5), // Rounded icon
-
-                                  _buildDropdownField<String>(
-                                    'Question Type',
-                                    _questionType,
-                                    ['MCQ', 'SA'],
-                                    (String? newValue) {
-                                      setState(() {
-                                        _questionType = newValue;
-                                        if (newValue != 'MCQ') {
-                                          _optionAController.clear();
-                                          _optionBController.clear();
-                                          _optionCController.clear();
-                                          _optionDController.clear();
-                                        }
-                                      });
-                                    },
-                                    Icons.category_rounded, // Rounded icon
-                                    validatorMessage: 'Please select a question type',
-                                    itemBuilder: (type) => Text(type, style: const TextStyle(color: Colors.black87, fontSize: 17)),
-                                  ),
-
-                                  if (_questionType == 'MCQ') ...[
-                                    _buildTextField(_optionAController, 'Option A', 'Option A cannot be empty', Icons.looks_one_rounded), // Rounded icon
-                                    _buildTextField(_optionBController, 'Option B', 'Option B cannot be empty', Icons.looks_two_rounded), // Rounded icon
-                                    _buildTextField(_optionCController, 'Option C', 'Option C cannot be empty', Icons.looks_3_rounded), // Rounded icon
-                                    _buildTextField(_optionDController, 'Option D', 'Option D cannot be empty', Icons.looks_4_rounded), // Rounded icon
-                                  ],
-
-                                  _buildTextField(_correctAnswerTextController, 'Correct Answer Text', 'Please enter the correct answer', Icons.check_circle_rounded), // Rounded icon
-
-                                  _buildDropdownField<String>(
-                                    'Difficulty Level',
-                                    _difficultyLevel,
-                                    ['Easy', 'Medium', 'Hard'],
-                                    (String? newValue) {
-                                      setState(() {
-                                        _difficultyLevel = newValue;
-                                      });
-                                    },
-                                    Icons.bar_chart_rounded, // Rounded icon
-                                    validatorMessage: 'Please select a difficulty level',
-                                    itemBuilder: (level) => Text(level, style: const TextStyle(color: Colors.black87, fontSize: 17)),
-                                  ),
-
-                                  _buildTextField(_expectedTimeSecondsController, 'Expected Time (seconds)', 'Please enter expected time', Icons.timer_rounded, keyboardType: TextInputType.number), // Rounded icon
-
-                                  const SizedBox(height: 50),
-                                  Center(
-                                    child: _isLoading
-                                        ? const CircularProgressIndicator(color: Colors.deepPurpleAccent)
-                                        : ElevatedButton.icon(
-                                            onPressed: _submitQuestion,
-                                            icon: const Icon(Icons.add_box_rounded, size: 30),
-                                            label: const Text('Add Question'),
-                                            style: ElevatedButton.styleFrom(
-                                              backgroundColor: Colors.deepPurpleAccent.shade700,
-                                              foregroundColor: Colors.white,
-                                              padding: const EdgeInsets.symmetric(horizontal: 60, vertical: 20),
-                                              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
-                                              textStyle: const TextStyle(fontSize: 22, fontWeight: FontWeight.bold),
-                                              elevation: 12,
-                                              shadowColor: Colors.deepPurple.shade900.withOpacity(0.7),
-                                            ),
-                                          ),
-                                  ),
-                                ],
+        child: _isLoading
+            ? const Center(child: CircularProgressIndicator(color: Colors.white))
+            : SingleChildScrollView(
+                padding: const EdgeInsets.all(20.0),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.stretch,
+                  children: [
+                    Card(
+                      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
+                      elevation: 8,
+                      shadowColor: Colors.black.withOpacity(0.4),
+                      child: Padding(
+                        padding: const EdgeInsets.all(25.0),
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            Text(
+                              'Question Details',
+                              style: TextStyle(
+                                fontSize: 24,
+                                fontWeight: FontWeight.bold,
+                                color: Colors.deepPurple.shade800,
                               ),
                             ),
-                          ),
+                            const SizedBox(height: 20),
+                            DropdownButtonFormField<Lesson>(
+                              value: _selectedLesson,
+                              decoration: _inputDecoration('Select Lesson', Icons.book_rounded),
+                              hint: const Text('Select Lesson'),
+                              items: _lessons.map((lesson) {
+                                return DropdownMenuItem<Lesson>(
+                                  value: lesson,
+                                  child: Text(lesson.title),
+                                );
+                              }).toList(),
+                              onChanged: (Lesson? newValue) {
+                                setState(() {
+                                  _selectedLesson = newValue;
+                                });
+                              },
+                              dropdownColor: Colors.deepPurple.shade50,
+                              style: TextStyle(color: Colors.deepPurple.shade800, fontSize: 16),
+                              icon: Icon(Icons.arrow_drop_down_circle, color: Colors.deepPurple.shade500),
+                            ),
+                            const SizedBox(height: 15),
+                            _buildTextField(_questionTextController, 'Question Text', Icons.question_mark_rounded, maxLines: 5),
+                            const SizedBox(height: 15),
+                            DropdownButtonFormField<String>(
+                              value: _selectedQuestionType,
+                              decoration: _inputDecoration('Question Type', Icons.category_rounded),
+                              hint: const Text('Select Question Type'),
+                              items: const [
+                                DropdownMenuItem(value: 'MCQ', child: Text('Multiple Choice Question')),
+                                DropdownMenuItem(value: 'SA', child: Text('Short Answer')),
+                              ],
+                              onChanged: (String? newValue) {
+                                setState(() {
+                                  _selectedQuestionType = newValue;
+                                });
+                              },
+                              dropdownColor: Colors.deepPurple.shade50,
+                              style: TextStyle(color: Colors.deepPurple.shade800, fontSize: 16),
+                              icon: Icon(Icons.arrow_drop_down_circle, color: Colors.deepPurple.shade500),
+                            ),
+                            const SizedBox(height: 15),
+                            if (_selectedQuestionType == 'MCQ') ...[
+                              _buildTextField(_optionAController, 'Option A', Icons.looks_one_rounded),
+                              const SizedBox(height: 10),
+                              _buildTextField(_optionBController, 'Option B', Icons.looks_two_rounded),
+                              const SizedBox(height: 10),
+                              _buildTextField(_optionCController, 'Option C (Optional)', Icons.looks_3_rounded, required: false),
+                              const SizedBox(height: 10),
+                              _buildTextField(_optionDController, 'Option D (Optional)', Icons.looks_4_rounded, required: false),
+                              const SizedBox(height: 15),
+                            ],
+                            _buildTextField(_correctAnswerController, 'Correct Answer', Icons.check_circle_rounded),
+                            const SizedBox(height: 15),
+                            DropdownButtonFormField<String>(
+                              value: _selectedDifficulty,
+                              decoration: _inputDecoration('Difficulty Level', Icons.bar_chart_rounded),
+                              hint: const Text('Select Difficulty'),
+                              items: const [
+                                DropdownMenuItem(value: 'Easy', child: Text('Easy')),
+                                DropdownMenuItem(value: 'Medium', child: Text('Medium')),
+                                DropdownMenuItem(value: 'Hard', child: Text('Hard')),
+                              ],
+                              onChanged: (String? newValue) {
+                                setState(() {
+                                  _selectedDifficulty = newValue;
+                                });
+                              },
+                              dropdownColor: Colors.deepPurple.shade50,
+                              style: TextStyle(color: Colors.deepPurple.shade800, fontSize: 16),
+                              icon: Icon(Icons.arrow_drop_down_circle, color: Colors.deepPurple.shade500),
+                            ),
+                            const SizedBox(height: 25),
+                            if (_errorMessage != null)
+                              Padding(
+                                padding: const EdgeInsets.only(bottom: 15.0),
+                                child: Text(
+                                  _errorMessage!,
+                                  style: const TextStyle(color: Colors.redAccent, fontSize: 16, fontWeight: FontWeight.bold),
+                                  textAlign: TextAlign.center,
+                                ),
+                              ),
+                            _isSaving
+                                ? const Center(child: CircularProgressIndicator(color: Colors.deepPurple))
+                                : ElevatedButton.icon(
+                                    onPressed: _addQuestion,
+                                    icon: const Icon(Icons.add_task_rounded, size: 28),
+                                    label: const Text('Add Question'),
+                                    style: ElevatedButton.styleFrom(
+                                      backgroundColor: Colors.deepPurpleAccent.shade700,
+                                      foregroundColor: Colors.white,
+                                      padding: const EdgeInsets.symmetric(horizontal: 40, vertical: 18),
+                                      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(15)),
+                                      textStyle: const TextStyle(fontSize: 18, fontWeight: FontWeight.bold),
+                                      elevation: 8,
+                                      shadowColor: Colors.deepPurple.shade900.withOpacity(0.7),
+                                    ),
+                                  ),
+                          ],
                         ),
                       ),
-          ),
-        ),
+                    ),
+                  ],
+                ),
+              ),
       ),
     );
   }
 
-  Widget _buildTextField(TextEditingController controller, String label, String validationMessage, IconData icon, {int maxLines = 1, TextInputType keyboardType = TextInputType.text}) {
-    return Padding(
-      padding: const EdgeInsets.symmetric(vertical: 15.0),
-      child: TextFormField(
-        controller: controller,
-        maxLines: maxLines,
-        keyboardType: keyboardType,
-        style: const TextStyle(color: Colors.black87, fontSize: 17),
-        decoration: InputDecoration(
-          labelText: label,
-          labelStyle: TextStyle(color: Colors.deepPurple.shade800, fontWeight: FontWeight.w600),
-          prefixIcon: Icon(icon, color: Colors.deepPurple.shade500),
-          filled: true,
-          fillColor: Colors.deepPurple.shade50.withOpacity(0.8),
-          border: OutlineInputBorder(
-            borderRadius: BorderRadius.circular(18),
-            borderSide: BorderSide.none,
-          ),
-          enabledBorder: OutlineInputBorder(
-            borderRadius: BorderRadius.circular(18),
-            borderSide: BorderSide(color: Colors.deepPurple.shade300, width: 1.5),
-          ),
-          focusedBorder: OutlineInputBorder(
-            borderRadius: BorderRadius.circular(18),
-            borderSide: BorderSide(color: Colors.deepPurple.shade800, width: 3),
-          ),
-          errorStyle: const TextStyle(color: Colors.redAccent, fontWeight: FontWeight.bold, fontSize: 13),
-          contentPadding: const EdgeInsets.symmetric(vertical: 18, horizontal: 15),
-        ),
-        validator: (value) {
-          if (value == null || value.isEmpty) {
-            return validationMessage;
-          }
-          return null;
-        },
+  InputDecoration _inputDecoration(String label, IconData icon, {String? hintText}) {
+    return InputDecoration(
+      labelText: label,
+      hintText: hintText,
+      labelStyle: TextStyle(color: Colors.deepPurple.shade800, fontWeight: FontWeight.w600),
+      hintStyle: TextStyle(color: Colors.grey.shade600),
+      filled: true,
+      fillColor: Colors.deepPurple.shade50.withOpacity(0.8),
+      border: OutlineInputBorder(
+        borderRadius: BorderRadius.circular(18),
+        borderSide: BorderSide.none,
       ),
+      enabledBorder: OutlineInputBorder(
+        borderRadius: BorderRadius.circular(18),
+        borderSide: BorderSide(color: Colors.deepPurple.shade300, width: 1.5),
+      ),
+      focusedBorder: OutlineInputBorder(
+        borderRadius: BorderRadius.circular(18),
+        borderSide: BorderSide(color: Colors.deepPurple.shade800, width: 3),
+      ),
+      prefixIcon: Icon(icon, color: Colors.deepPurple.shade500),
+      contentPadding: const EdgeInsets.symmetric(vertical: 18, horizontal: 15),
     );
   }
 
-  Widget _buildDropdownField<T>(String label, T? currentValue, List<T> items, ValueChanged<T?> onChanged, IconData icon, {String? validatorMessage, required Widget Function(T) itemBuilder}) {
-    return Padding(
-      padding: const EdgeInsets.symmetric(vertical: 15.0),
-      child: DropdownButtonFormField<T>(
-        value: currentValue,
-        decoration: InputDecoration(
-          labelText: label,
-          labelStyle: TextStyle(color: Colors.deepPurple.shade800, fontWeight: FontWeight.w600),
-          prefixIcon: Icon(icon, color: Colors.deepPurple.shade500),
-          filled: true,
-          fillColor: Colors.deepPurple.shade50.withOpacity(0.8),
-          border: OutlineInputBorder(
-            borderRadius: BorderRadius.circular(18),
-            borderSide: BorderSide.none,
-          ),
-          enabledBorder: OutlineInputBorder(
-            borderRadius: BorderRadius.circular(18),
-            borderSide: BorderSide(color: Colors.deepPurple.shade300, width: 1.5),
-          ),
-          focusedBorder: OutlineInputBorder(
-            borderRadius: BorderRadius.circular(18),
-            borderSide: BorderSide(color: Colors.deepPurple.shade800, width: 3),
-          ),
-          errorStyle: const TextStyle(color: Colors.redAccent, fontWeight: FontWeight.bold, fontSize: 13),
-          contentPadding: const EdgeInsets.symmetric(vertical: 18, horizontal: 15),
-        ),
-        items: items.map<DropdownMenuItem<T>>((T value) {
-          return DropdownMenuItem<T>(
-            value: value,
-            child: itemBuilder(value),
-          );
-        }).toList(),
-        onChanged: onChanged,
-        validator: (value) {
-          if (validatorMessage != null && (value == null || (value is String && value.isEmpty))) {
-            return validatorMessage;
-          }
-          return null;
-        },
-        dropdownColor: Colors.white,
-      ),
+  Widget _buildTextField(TextEditingController controller, String label, IconData icon, {bool required = true, int? maxLines}) {
+    return TextField(
+      controller: controller,
+      decoration: _inputDecoration(label, icon),
+      maxLines: maxLines,
+      style: const TextStyle(color: Colors.black87, fontSize: 17),
     );
   }
 }
