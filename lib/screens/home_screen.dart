@@ -95,19 +95,20 @@ class _HomeScreenState extends State<HomeScreen> with SingleTickerProviderStateM
 
   Widget _buildDrawerItem(String title, IconData icon, VoidCallback onTap) {
     return ListTile(
-      leading: Icon(icon, color: Colors.deepPurple.shade700, size: 28),
+      // Updated colors for consistency with the new gradient theme
+      leading: Icon(icon, color: Colors.white, size: 28), // White icons for contrast on dark drawer
       title: Text(
         title,
-        style: TextStyle(
+        style: const TextStyle(
           fontSize: 18,
           fontWeight: FontWeight.w600,
-          color: Colors.deepPurple.shade900,
+          color: Colors.white, // White text for contrast
         ),
       ),
       onTap: onTap,
       contentPadding: const EdgeInsets.symmetric(horizontal: 20, vertical: 8),
       shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(15)),
-      hoverColor: Colors.deepPurple.shade600.withOpacity(0.4), // Subtle hover effect
+      hoverColor: Colors.white.withOpacity(0.2), // Subtle hover effect
       tileColor: Colors.transparent, // Ensure no default background
     );
   }
@@ -159,7 +160,7 @@ class _HomeScreenState extends State<HomeScreen> with SingleTickerProviderStateM
         title: const Text('LearnFlow AI'),
         centerTitle: true,
         elevation: 0,
-        backgroundColor: Colors.deepPurple.shade700,
+        backgroundColor: Colors.deepPurple.shade700, // AppBar color can be adjusted if needed for consistency
         actions: [
           IconButton(
             icon: const Icon(Icons.refresh, color: Colors.white),
@@ -170,9 +171,10 @@ class _HomeScreenState extends State<HomeScreen> with SingleTickerProviderStateM
       ),
       drawer: Drawer(
         child: Container(
+          // Drawer background gradient - MATCHING AuthScreen/Home Body
           decoration: BoxDecoration(
             gradient: LinearGradient(
-              colors: [Colors.deepPurple.shade50, Colors.deepPurple.shade100],
+              colors: [Colors.deepPurple.shade900, Colors.indigo.shade800, Colors.purple.shade700],
               begin: Alignment.topLeft,
               end: Alignment.bottomRight,
             ),
@@ -180,67 +182,81 @@ class _HomeScreenState extends State<HomeScreen> with SingleTickerProviderStateM
           child: ListView(
             padding: EdgeInsets.zero,
             children: <Widget>[
-              DrawerHeader(
-                decoration: BoxDecoration(
-                  color: Colors.deepPurple.shade700,
-                  gradient: LinearGradient(
-                    colors: [Colors.deepPurple.shade800, Colors.deepPurple.shade600],
-                    begin: Alignment.topLeft,
-                    end: Alignment.bottomRight,
+              // DrawerHeader with flexible content
+              // Removed fixed height constraint, allowing it to size based on content
+              // Added a minimum height using SizedBox for visual consistency
+              SizedBox(
+                height: 180, // Set a fixed height for the DrawerHeader area
+                child: DrawerHeader(
+                  margin: EdgeInsets.zero, // Remove default margin
+                  padding: const EdgeInsets.all(16.0), // Add custom padding
+                  decoration: BoxDecoration(
+                    gradient: LinearGradient(
+                      colors: [Colors.deepPurple.shade800, Colors.deepPurple.shade600],
+                      begin: Alignment.topLeft,
+                      end: Alignment.bottomRight,
+                    ),
+                    borderRadius: const BorderRadius.only(
+                      bottomLeft: Radius.circular(20),
+                      bottomRight: Radius.circular(20),
+                    ),
                   ),
-                  borderRadius: const BorderRadius.only(
-                    bottomLeft: Radius.circular(20),
-                    bottomRight: Radius.circular(20),
-                  ),
-                ),
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    ScaleTransition(
-                      scale: _scaleAnimation,
-                      child: FadeTransition(
-                        opacity: _fadeAnimation,
-                        child: CircleAvatar(
-                          radius: 35,
-                          backgroundColor: Colors.white.withOpacity(0.9),
-                          child: Icon(
-                            Icons.person,
-                            size: 40,
-                            color: Colors.deepPurple.shade800,
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    mainAxisAlignment: MainAxisAlignment.end, // Align content to the bottom
+                    children: [
+                      ScaleTransition(
+                        scale: _scaleAnimation,
+                        child: FadeTransition(
+                          opacity: _fadeAnimation,
+                          child: CircleAvatar(
+                            radius: 35,
+                            backgroundColor: Colors.white.withOpacity(0.9),
+                            child: Icon(
+                              Icons.person,
+                              size: 40,
+                              color: Colors.deepPurple.shade800,
+                            ),
                           ),
                         ),
                       ),
-                    ),
-                    const SizedBox(height: 10),
-                    FadeTransition(
-                      opacity: _fadeAnimation,
-                      child: Text(
-                        _currentUser?.username ?? 'Guest User',
-                        style: const TextStyle(
-                          color: Colors.white,
-                          fontSize: 24,
-                          fontWeight: FontWeight.bold,
-                        ),
-                      ),
-                    ),
-                    if (_currentUser?.isStaff == true)
+                      const SizedBox(height: 10),
                       FadeTransition(
                         opacity: _fadeAnimation,
-                        child: const Text(
-                          'Teacher/Admin',
-                          style: TextStyle(
-                            color: Colors.white70,
-                            fontSize: 16,
+                        child: Text(
+                          _currentUser?.username ?? 'Guest User',
+                          style: const TextStyle(
+                            color: Colors.white,
+                            fontSize: 24,
+                            fontWeight: FontWeight.bold,
                           ),
+                          overflow: TextOverflow.ellipsis, // Prevent overflow for long usernames
                         ),
                       ),
-                  ],
+                      if (_currentUser?.isStaff == true)
+                        FadeTransition(
+                          opacity: _fadeAnimation,
+                          child: const Text(
+                            'Teacher/Admin',
+                            style: TextStyle(
+                              color: Colors.white70,
+                              fontSize: 16,
+                            ),
+                            overflow: TextOverflow.ellipsis, // Prevent overflow
+                          ),
+                        ),
+                    ],
+                  ),
                 ),
               ),
+              // Main navigation items, consistent with previous design
               _buildDrawerItem(
                 'Lessons',
                 Icons.book_rounded,
-                    () => Navigator.pop(context), // Close drawer
+                    () {
+                  Navigator.pop(context); // Close drawer
+                  Navigator.push(context, MaterialPageRoute(builder: (context) => const LessonsScreen()));
+                },
               ),
               _buildDrawerItem(
                 'My Wallet',
@@ -267,7 +283,7 @@ class _HomeScreenState extends State<HomeScreen> with SingleTickerProviderStateM
                     Navigator.push(context, MaterialPageRoute(builder: (context) => const TeacherDashboardScreen()));
                   },
                 ),
-              const Divider(height: 20, thickness: 1, indent: 20, endIndent: 20, color: Colors.deepPurple),
+              Divider(height: 20, thickness: 1, indent: 20, endIndent: 20, color: Colors.white.withOpacity(0.3)),
               _buildDrawerItem(
                 'Logout',
                 Icons.logout_rounded,
@@ -304,19 +320,19 @@ class _HomeScreenState extends State<HomeScreen> with SingleTickerProviderStateM
       )
           : Stack(
         children: [
-          // Background gradient
+          // Background gradient - MATCHING AuthScreen
           Container(
             decoration: BoxDecoration(
               gradient: LinearGradient(
-                colors: [Colors.deepPurple.shade50, Colors.deepPurple.shade200],
+                colors: [Colors.deepPurple.shade900, Colors.indigo.shade800, Colors.purple.shade700],
                 begin: Alignment.topCenter,
                 end: Alignment.bottomCenter,
               ),
             ),
           ),
-          // Main content
+          // Main content: Wrapped in SingleChildScrollView to prevent overflow
           Center(
-            child: Padding(
+            child: SingleChildScrollView(
               padding: const EdgeInsets.all(20.0),
               child: Column(
                 mainAxisAlignment: MainAxisAlignment.center,
@@ -326,7 +342,7 @@ class _HomeScreenState extends State<HomeScreen> with SingleTickerProviderStateM
                     child: Icon(
                       Icons.school_rounded,
                       size: size.width * 0.3,
-                      color: Colors.deepPurple.shade700,
+                      color: Colors.white, // Changed to white for better contrast on dark background
                     ),
                   ),
                   SizedBox(height: size.height * 0.03),
@@ -338,7 +354,7 @@ class _HomeScreenState extends State<HomeScreen> with SingleTickerProviderStateM
                       style: TextStyle(
                         fontSize: size.width * 0.06,
                         fontWeight: FontWeight.bold,
-                        color: Colors.deepPurple.shade900,
+                        color: Colors.white, // Changed to white
                       ),
                     ),
                   ),
@@ -350,38 +366,13 @@ class _HomeScreenState extends State<HomeScreen> with SingleTickerProviderStateM
                       textAlign: TextAlign.center,
                       style: TextStyle(
                         fontSize: size.width * 0.038,
-                        color: Colors.grey.shade700,
+                        color: Colors.white70, // Changed to white70 for contrast
                       ),
                     ),
                   ),
                   SizedBox(height: size.height * 0.05),
-                  // Buttons are now handled by the drawer for a cleaner home screen
-                  // This space can be used for other widgets or left as padding
-                  SizedBox(
-                    width: size.width * 0.75,
-                    child: ElevatedButton.icon(
-                      onPressed: () {
-                        Navigator.push(
-                          context,
-                          MaterialPageRoute(builder: (context) => const LessonsScreen()),
-                        );
-                      },
-                      icon: const Icon(Icons.book_rounded, size: 28),
-                      label: const Text('Start Learning'),
-                      style: ElevatedButton.styleFrom(
-                        backgroundColor: Colors.deepPurple.shade700,
-                        foregroundColor: Colors.white,
-                        padding: const EdgeInsets.symmetric(horizontal: 25, vertical: 18),
-                        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(25)),
-                        textStyle: TextStyle(
-                          fontSize: size.width * 0.042,
-                          fontWeight: FontWeight.w600,
-                        ),
-                        elevation: 8,
-                        shadowColor: Colors.black.withOpacity(0.3),
-                      ),
-                    ),
-                  ),
+                  // Removed the ElevatedButton for "Start Learning" from here.
+                  // All navigation is now exclusively through the drawer.
                 ],
               ),
             ),
