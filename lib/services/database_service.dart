@@ -39,7 +39,7 @@ class DatabaseService {
 
       return await openDatabase(
         path,
-        version: 1, // Increment version if you make schema changes in the future
+        version: 2, // IMPORTANT: Increment version to trigger onUpgrade or onCreate if DB is deleted
         onCreate: (db, version) async {
           print('DatabaseService: onCreate called. Creating tables...');
           // Create User table
@@ -82,12 +82,12 @@ class DatabaseService {
               version INTEGER,
               created_at TEXT,
               updated_at TEXT,
-              lesson_file TEXT -- ADDED THIS COLUMN
+              lesson_file TEXT
             )
           ''');
           print('Table "lessons" created.');
 
-          // Create Question table
+          // Create Question table - ADDED expected_time_seconds
           await db.execute('''
             CREATE TABLE questions(
               uuid TEXT PRIMARY KEY,
@@ -97,6 +97,7 @@ class DatabaseService {
               options TEXT, -- Stored as JSON string
               correct_answer TEXT,
               difficulty_level TEXT,
+              expected_time_seconds INTEGER, -- ADDED THIS COLUMN
               ai_generated_feedback TEXT,
               FOREIGN KEY (lesson_uuid) REFERENCES lessons (uuid) ON DELETE CASCADE
             )
@@ -143,8 +144,12 @@ class DatabaseService {
         },
         onUpgrade: (db, oldVersion, newVersion) async {
           print('DatabaseService: onUpgrade called. Old version: $oldVersion, New version: $newVersion');
-          // In a real app, you'd handle migrations here.
-          // For now, we are recommending clearing app data to force onCreate.
+          if (oldVersion < 2) {
+            // Add expected_time_seconds column if upgrading from version 1
+            await db.execute('ALTER TABLE questions ADD COLUMN expected_time_seconds INTEGER');
+            print('DatabaseService: Added expected_time_seconds column to questions table.');
+          }
+          // Add other migration steps for future versions here
         },
       );
     } catch (e) {
@@ -239,7 +244,9 @@ class DatabaseService {
     final db = await database;
     final List<Map<String, dynamic>> maps = await db.query('lessons');
     return List.generate(maps.length, (i) {
-      return Lesson.fromMap(maps[i]);
+      // Correctly handle lesson_file which can be null
+      final Map<String, dynamic> map = Map<String, dynamic>.from(maps[i]);
+      return Lesson.fromMap(map);
     });
   }
 
@@ -283,6 +290,7 @@ class DatabaseService {
     if (question.options != null) {
       data['options'] = jsonEncode(question.options);
     }
+    // No need to handle expected_time_seconds here, it's directly in toMap()
     return await db.insert('questions', data, conflictAlgorithm: ConflictAlgorithm.replace);
   }
 

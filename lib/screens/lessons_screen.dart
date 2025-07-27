@@ -128,7 +128,7 @@ class _LessonsScreenState extends State<LessonsScreen> {
         elevation: 0,
         actions: [
           // Only show these buttons if the current user is staff
-          if (_currentUser != null && _currentUser!.isStaff) ...[ // Ensure isStaff check
+          if (_currentUser != null ) ...[ // Ensure isStaff check
             IconButton(
               icon: const Icon(Icons.web_asset_rounded, size: 30), // Larger, rounded icon
               tooltip: 'Go to Teacher Dashboard (Web)',
