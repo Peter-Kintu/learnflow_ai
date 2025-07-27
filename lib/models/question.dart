@@ -10,6 +10,7 @@ class Question {
   final List<String>? options; // For MCQ, stored as JSON string in DB
   final String correctAnswerText;
   final String difficultyLevel;
+  final int? expectedTimeSeconds; // Added this field
   final String? aiGeneratedFeedback; // Added this field
 
   Question({
@@ -20,6 +21,7 @@ class Question {
     this.options,
     required this.correctAnswerText,
     required this.difficultyLevel,
+    this.expectedTimeSeconds, // Include in constructor
     this.aiGeneratedFeedback, // Include in constructor
   });
 
@@ -33,6 +35,7 @@ class Question {
       'options': options != null ? jsonEncode(options) : null, // Store as JSON string
       'correct_answer': correctAnswerText,
       'difficulty_level': difficultyLevel,
+      'expected_time_seconds': expectedTimeSeconds, // Include in map
       'ai_generated_feedback': aiGeneratedFeedback, // Include in map
     };
   }
@@ -47,6 +50,7 @@ class Question {
       options: map['options'] != null ? List<String>.from(jsonDecode(map['options'] as String)) : null,
       correctAnswerText: map['correct_answer'] as String,
       difficultyLevel: map['difficulty_level'] as String,
+      expectedTimeSeconds: map['expected_time_seconds'] as int?, // Retrieve from map
       aiGeneratedFeedback: map['ai_generated_feedback'] as String?, // Retrieve from map
     );
   }
@@ -55,12 +59,13 @@ class Question {
   Map<String, dynamic> toJson() {
     return {
       'uuid': uuid,
-      'lesson_uuid': lessonUuid,
+      'lesson': lessonUuid, // Use backend's field name 'lesson' for UUID
       'question_text': questionText,
       'question_type': questionType,
       'options': options,
       'correct_answer_text': correctAnswerText, // Use backend's field name
       'difficulty_level': difficultyLevel,
+      'expected_time_seconds': expectedTimeSeconds, // Include in JSON
       'ai_generated_feedback': aiGeneratedFeedback, // Include in JSON
     };
   }
@@ -69,12 +74,13 @@ class Question {
   factory Question.fromJson(Map<String, dynamic> json) {
     return Question(
       uuid: json['uuid'] as String,
-      lessonUuid: json['lesson_uuid'] as String, // This will now correctly map to the new field from Django
+      lessonUuid: json['lesson'] as String, // This will now correctly map to the new field from Django
       questionText: json['question_text'] as String,
       questionType: json['question_type'] as String,
       options: (json['options'] as List?)?.map((e) => e as String).toList(),
       correctAnswerText: json['correct_answer_text'] as String,
       difficultyLevel: json['difficulty_level'] as String,
+      expectedTimeSeconds: json['expected_time_seconds'] as int?, // Include from JSON
       aiGeneratedFeedback: json['ai_generated_feedback'] as String?,
     );
   }
