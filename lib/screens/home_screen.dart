@@ -9,6 +9,7 @@ import 'package:learnflow_ai/screens/sync_status_screen.dart';
 import 'package:learnflow_ai/screens/wallet_screen.dart'; // Import WalletScreen
 import 'package:url_launcher/url_launcher.dart'; // Keep this import for wallet screen potentially
 import 'package:learnflow_ai/screens/auth_screen.dart'; // Import AuthScreen for logout navigation
+import 'package:learnflow_ai/screens/tutor_ai_screen.dart'; // Make sure this path is correct
 
 class HomeScreen extends StatefulWidget {
   const HomeScreen({super.key});
@@ -266,6 +267,15 @@ class _HomeScreenState extends State<HomeScreen> with SingleTickerProviderStateM
                   Navigator.push(context, MaterialPageRoute(builder: (context) => const WalletScreen()));
                 },
               ),
+              _buildDrawerItem(
+                  'AI TutorBot',
+               Icons.smart_toy_rounded,
+               () {
+                Navigator.pop(context); // Close drawer
+                 Navigator.push(context, MaterialPageRoute(builder: (context) => const TutorAIScreen()));
+               },
+            ),
+
               _buildDrawerItem(
                 'Sync Status',
                 Icons.sync_rounded,
