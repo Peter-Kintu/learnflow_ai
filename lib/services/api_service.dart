@@ -65,11 +65,12 @@ class ApiService {
     print('API Service: Local auth token and user ID cleared.');
   }
 
-  Map<String, String> _getHeaders({bool includeAuth = true, bool isJson = true}) {
-    final headers = <String, String>{};
-    if (isJson) {
-      headers['Content-Type'] = 'application/json';
-    }
+  // Updated _getHeaders to ensure correct Content-Type for all requests
+  Map<String, String> _getHeaders({bool includeAuth = true, String contentType = 'application/json'}) {
+    final headers = <String, String>{
+      'Content-Type': contentType,
+      'Accept': 'application/json',
+    };
     if (includeAuth && _authToken != null) {
       headers['Authorization'] = 'Token $_authToken';
     }
@@ -89,24 +90,22 @@ class ApiService {
   }
 
   // --- Auth Endpoints ---
-  // MODIFIED: Added email parameter
-  Future<Map<String, dynamic>> registerUser(String username, String email, String password, {String? studentIdCode, String? gender}) async {
+  Future<Map<String, dynamic>> registerUser(String username, String password, {required String email, String? studentIdCode, String? gender}) async {
     final url = Uri.parse('$_baseUrl/auth/register/');
     final body = jsonEncode({
       'username': username,
-      'email': email, // Added email
+      'email': email,
       'password': password,
       if (studentIdCode != null) 'student_id_code': studentIdCode,
-      if (gender != null) 'gender': gender, // Added gender
+      if (gender != null) 'gender': gender,
     });
     try {
       final response = await http.post(url, headers: _getHeaders(includeAuth: false), body: body);
       final responseData = jsonDecode(response.body);
       if (response.statusCode == 201) {
         await _saveAuthToken(responseData['token'], responseData['user_id']);
-        return {'success': true, 'message': 'Registration successful'};
+        return {'success': true, 'message': 'Registration successful', 'user_id': responseData['user_id']};
       } else {
-        // More detailed error message for debugging 400 Bad Request
         print('API Service: Register failed - Status: ${response.statusCode}, Body: ${response.body}');
         return {'success': false, 'message': responseData['error'] ?? responseData.toString() ?? 'Registration failed'};
       }
@@ -124,7 +123,7 @@ class ApiService {
       final responseData = jsonDecode(response.body);
       if (response.statusCode == 200) {
         await _saveAuthToken(responseData['token'], responseData['user_id']);
-        return {'success': true, 'message': 'Login successful', 'user_id': responseData['user_id'], 'username': responseData['username']}; // Return user_id and username
+        return {'success': true, 'message': 'Login successful', 'user_id': responseData['user_id'], 'username': responseData['username']};
       } else {
         return {'success': false, 'message': responseData['error'] ?? 'Login failed'};
       }
@@ -135,57 +134,36 @@ class ApiService {
 
   // --- User/Student Endpoints ---
   Future<User?> fetchCurrentUser() async {
-    await _ensureToken(); // Ensure token is loaded before making the call
+    await _ensureToken();
     if (_authToken == null || _currentUserId == null) {
       print('API Service: fetchCurrentUser called without token or user ID. Returning null.');
       return null;
     }
 
-    // First, try to fetch the Student profile (which includes User data)
-    final studentUrl = Uri.parse('$_baseUrl/students/$_currentUserId/');
-    print('API Service: Attempting to fetch current student profile from $studentUrl with token $_authToken');
+    final userUrl = Uri.parse('$_baseUrl/auth/user/');
+    print('API Service: Attempting to fetch current user info from $userUrl with token $_authToken');
     try {
-      final studentResponse = await http.get(studentUrl, headers: _getHeaders());
-      print('API Service: Fetch student response status: ${studentResponse.statusCode}, body: ${studentResponse.body}');
+      final userResponse = await http.get(userUrl, headers: _getHeaders());
+      print('API Service: Fetch user response status: ${userResponse.statusCode}, body: ${userResponse.body}');
 
-      if (studentResponse.statusCode == 200) {
-        final studentData = jsonDecode(studentResponse.body);
-        // Assuming StudentSerializer returns a 'user' key with User details
-        // and other student-specific fields at the top level.
-        // We need to construct a User object from this.
-        // The User model might need to be updated to handle student-specific fields if needed.
-        return User.fromJson(studentData['user']); // Extract user data from the student response
-      } else if (studentResponse.statusCode == 401) {
-        print('API Service: Authentication failed (401) for student profile. Token might be invalid or expired. Logging out.');
+      if (userResponse.statusCode == 200) {
+        return User.fromJson(jsonDecode(userResponse.body));
+      } else if (userResponse.statusCode == 401) {
+        print('API Service: Authentication failed (401) for basic user info. Token might be invalid or expired. Logging out.');
         await logout();
         return null;
-      } else if (studentResponse.statusCode == 404) {
-        print('API Service: Student profile not found for ID $_currentUserId. Attempting to fetch basic user info.');
-        // If student profile not found, try to fetch just the basic User data
-        final userUrl = Uri.parse('$_baseUrl/auth/user/');
-        final userResponse = await http.get(userUrl, headers: _getHeaders());
-        if (userResponse.statusCode == 200) {
-          return User.fromJson(jsonDecode(userResponse.body));
-        } else if (userResponse.statusCode == 401) {
-          print('API Service: Authentication failed (401) for basic user info. Logging out.');
-          await logout();
-          return null;
-        } else {
-          print('API Service: Failed to fetch basic user info after student 404: ${userResponse.statusCode}, body: ${userResponse.body}');
-          return null;
-        }
       } else {
-        print('API Service: Failed to fetch current user/student with status: ${studentResponse.statusCode}, body: ${studentResponse.body}');
+        print('API Service: Failed to fetch basic user info with status: ${userResponse.statusCode}, body: ${userResponse.body}');
         return null;
       }
     } catch (e) {
-      print('API Service: Fetch Current User/Student Error: $e');
+      print('API Service: Fetch Current User Error: $e');
       return null;
     }
   }
 
   Future<Student?> fetchCurrentStudentProfile() async {
-    await _ensureToken(); // Ensure token is loaded before making the call
+    await _ensureToken();
     if (_authToken == null || _currentUserId == null) return null;
 
     final url = Uri.parse('$_baseUrl/students/$_currentUserId/');
@@ -199,7 +177,11 @@ class ApiService {
         print('API Service: Authentication failed (401) for student profile. Token might be invalid or expired.');
         await logout();
         return null;
+      } else if (response.statusCode == 404) {
+        print('API Service: Student profile not found for ID $_currentUserId. Returning null.');
+        return null; // Explicitly return null if 404
       }
+      print('API Service: Failed to fetch current student profile: ${response.statusCode}, body: ${response.body}');
       return null;
     } catch (e) {
       print('Fetch Current Student Profile Error: $e');
@@ -207,9 +189,53 @@ class ApiService {
     }
   }
 
+  // Method to create a Student profile
+  Future<Student?> createStudentProfile(int userId) async {
+    await _ensureToken();
+    if (_authToken == null) {
+      print('API Service: createStudentProfile called without token. Returning null.');
+      return null;
+    }
+
+    final url = Uri.parse('$_baseUrl/students/');
+    // FIX: Changed 'user_id' to 'user' as per backend expectation
+    final body = jsonEncode({
+      'user': userId,
+    });
+    print('API Service: Creating student profile for user ID $userId with data: $body');
+    try {
+      final response = await http.post(url, headers: _getHeaders(), body: body);
+      final responseData = jsonDecode(response.body);
+      print('API Service: Create student profile response status: ${response.statusCode}, body: ${response.body}');
+      if (response.statusCode == 201) {
+        return Student.fromJson(responseData);
+      } else if (response.statusCode == 401) {
+        print('API Service: Authentication failed (401) for create student profile. Logging out.');
+        await logout();
+        return null;
+      } else if (response.statusCode == 400 && responseData['user'] != null && responseData['user'].contains('student with this user already exists.')) {
+        print('API Service: Student profile already exists for user ID $userId. Attempting to fetch it instead.');
+        // If the student profile already exists, fetch it instead of failing
+        return await fetchCurrentStudentProfile();
+      }
+      else {
+        print('API Service: Failed to create student profile: ${response.statusCode}, body: ${response.body}');
+        // Provide more specific error if available from backend
+        if (responseData.containsKey('user')) {
+          print('Backend Error for user field: ${responseData['user']}');
+        }
+        return null;
+      }
+    } catch (e) {
+      print('API Service: Create Student Profile Error: $e');
+      return null;
+    }
+  }
+
+
   // --- Lesson Endpoints ---
   Future<List<Lesson>> fetchLessons() async {
-    await _ensureToken(); // Ensure token is loaded before making the call
+    await _ensureToken();
     if (_authToken == null) return [];
 
     final url = Uri.parse('$_baseUrl/lessons/');
@@ -271,10 +297,9 @@ class ApiService {
       final response = await http.get(url, headers: _getHeaders());
       print('API Service: Fetch questions response status: ${response.statusCode}, body: ${response.body}');
       if (response.statusCode == 200) {
-        final dynamic responseData = jsonDecode(response.body); // Use dynamic to check type
+        final dynamic responseData = jsonDecode(response.body);
         List<dynamic> data;
 
-        // Check if the response is a list directly or an object with 'results'
         if (responseData is List) {
           data = responseData;
         } else if (responseData is Map && responseData.containsKey('results')) {
@@ -283,7 +308,7 @@ class ApiService {
           print('API Service: Unexpected response structure for questions. Expected List or Map with "results".');
           return [];
         }
-        return data.map((json) => Question.fromJson(json)).toList();
+        return data.map((json) => Question.fromJson(json, lessonUuidFromContext: lessonUuid)).toList();
       } else if (response.statusCode == 401) {
         print('API Service: Authentication failed (401) for questions. Token might be invalid or expired.');
         await logout();
@@ -303,12 +328,14 @@ class ApiService {
     }
 
     final url = Uri.parse('$_baseUrl/questions/');
-    print('API Service: Adding question to $url');
+    final Map<String, dynamic> questionData = question.toJson();
+    print('API Service: Adding question with data: ${jsonEncode(questionData)}');
+
     try {
       final response = await http.post(
         url,
         headers: _getHeaders(),
-        body: jsonEncode(question.toJson()), // Convert Question object to JSON
+        body: jsonEncode(questionData),
       );
       final responseData = jsonDecode(response.body);
       print('API Service: Add question response status: ${response.statusCode}, body: ${response.body}');
@@ -316,7 +343,7 @@ class ApiService {
       if (response.statusCode == 201) {
         return {'success': true, 'message': 'Question added successfully!', 'data': responseData};
       } else {
-        return {'success': false, 'message': responseData['detail'] ?? 'Failed to add question'};
+        return {'success': false, 'message': responseData['detail'] ?? 'Failed to add question', 'errors': responseData};
       }
     } catch (e) {
       print('API Service: Error adding question: $e');
@@ -333,8 +360,13 @@ class ApiService {
     }
 
     final url = Uri.parse('$_baseUrl/quiz-attempts/bulk_upload/');
-    final List<Map<String, dynamic>> attemptsJson = attempts.map((a) => a.toJson()).toList();
-    print('API Service: Uploading quiz attempts: ${attemptsJson.length} attempts');
+    final List<Map<String, dynamic>> attemptsJson = attempts.map((a) {
+      // The toJson() method of QuizAttempt now correctly includes 'student' as studentUuid
+      return a.toJson();
+    }).toList();
+
+    print('API Service: Uploading quiz attempts: ${attemptsJson.length} attempts with data: ${jsonEncode(attemptsJson)}');
+
     try {
       final response = await http.post(
         url,
@@ -352,7 +384,7 @@ class ApiService {
         await logout();
         return {'success': false, 'message': 'Authentication failed. Please log in again.'};
       } else {
-        return {'success': false, 'message': responseData['error'] ?? 'Bulk upload failed', 'data': responseData};
+        return {'success': false, 'message': responseData['error'] ?? 'Bulk upload failed', 'errors': responseData};
       }
     } catch (e) {
       print('Bulk Upload Error: $e');
@@ -366,7 +398,7 @@ class ApiService {
     if (_authToken == null) return null;
 
     final url = Uri.parse('$_baseUrl/student-progress/$studentUserId/');
-    print('API Service: Fetching student progress for user ID: $studentUserId');
+    print('API Service: Fetching student progress for user ID: $studentUserId from $url');
     try {
       final response = await http.get(url, headers: _getHeaders());
       print('API Service: Fetch student progress response status: ${response.statusCode}, body: ${response.body}');
@@ -376,7 +408,11 @@ class ApiService {
         print('API Service: Authentication failed (401) for student progress. Token might be invalid or expired.');
         await logout();
         return null;
+      } else if (response.statusCode == 404) {
+        print('API Service: Student progress not found for user ID $_currentUserId. Returning null.');
+        return null; // No progress found is a valid scenario
       }
+      print('API Service: Failed to fetch student progress: ${response.statusCode}, body: ${response.body}');
       return null;
     } catch (e) {
       print('Fetch Student Progress Error: $e');
@@ -388,8 +424,8 @@ class ApiService {
     await _ensureToken();
     if (_authToken == null) return null;
 
-    final url = Uri.parse('$_baseUrl/student-progress/${progress.studentUserId}/');
-    print('API Service: Updating student progress for user ID: ${progress.studentUserId}');
+    final url = Uri.parse('$_baseUrl/student-progress/${progress.uuid}/'); // Use progress.uuid here
+    print('API Service: Updating student progress for UUID: ${progress.uuid} with data: ${jsonEncode(progress.toJson())}');
     try {
       final response = await http.put(
         url,
@@ -403,8 +439,10 @@ class ApiService {
         print('API Service: Authentication failed (401) for student progress update. Token might be invalid or expired.');
         await logout();
         return null;
+      } else {
+        print('API Service: Failed to update student progress: ${response.statusCode}, body: ${response.body}');
+        return null;
       }
-      return null;
     } catch (e) {
       print('Update Student Progress Error: $e');
       return null;
@@ -420,7 +458,7 @@ class ApiService {
 
     final url = Uri.parse('$_baseUrl/wallets/');
     final body = jsonEncode({
-      'student': _currentUserId,
+      'student': _currentUserId, // Send student's user ID
       'address': walletAddress,
     });
     print('API Service: Registering wallet: $body');
@@ -445,7 +483,7 @@ class ApiService {
       return {'success': false, 'message': 'Authentication token or user ID not available.'};
     }
 
-    final url = Uri.parse('$_baseUrl/wallets/$_currentUserId/');
+    final url = Uri.parse('$_baseUrl/wallets/$_currentUserId/'); // This assumes update by student_user_id
     final body = jsonEncode({
       'student': _currentUserId,
       'address': walletAddress,
@@ -465,7 +503,6 @@ class ApiService {
       return {'success': false, 'message': 'Network error during wallet update: $e'};
     }
   }
-
   Future<Map<String, dynamic>> getLearnFlowTokenBalance() async {
     await _ensureToken();
     if (_authToken == null) {
@@ -490,6 +527,52 @@ class ApiService {
     } catch (e) {
       print('Fetch LFT Balance Error: $e');
       return {'success': false, 'message': 'Network error during balance fetch: $e', 'balance': 0.0};
+    }
+  }
+
+  // --- AI Service Calls ---
+  Future<Map<String, dynamic>> getAiQuizFeedback(String questionText, String submittedAnswer, String correctAnswer, String questionType) async {
+    await _ensureToken();
+    final url = Uri.parse('$_baseUrl/ai/quiz-feedback/');
+    final body = jsonEncode({
+      'question_text': questionText,
+      'submitted_answer': submittedAnswer,
+      'correct_answer': correctAnswer,
+      'question_type': questionType,
+    });
+    try {
+      final response = await http.post(url, headers: _getHeaders(), body: body);
+      final responseData = jsonDecode(response.body);
+      if (response.statusCode == 200) {
+        return {'success': true, 'feedback_text': responseData['feedback_text'], 'score': responseData['score']};
+      } else if (response.statusCode == 401) {
+        await logout();
+        return {'success': false, 'message': 'Authentication failed. Please log in again.'};
+      } else {
+        return {'success': false, 'message': responseData['error'] ?? 'Failed to get AI feedback'};
+      }
+    } catch (e) {
+      return {'success': false, 'message': 'Network error during AI feedback request: $e'};
+    }
+  }
+
+  Future<Map<String, dynamic>> getAiRecommendations(String studentIdCode) async {
+    await _ensureToken();
+    final url = Uri.parse('$_baseUrl/ai/recommendations/');
+    final body = jsonEncode({'student_id_code': studentIdCode});
+    try {
+      final response = await http.post(url, headers: _getHeaders(), body: body);
+      final responseData = jsonDecode(response.body);
+      if (response.statusCode == 200) {
+        return {'success': true, 'recommendations': responseData['recommendations']};
+      } else if (response.statusCode == 401) {
+        await logout();
+        return {'success': false, 'message': 'Authentication failed. Please log in again.'};
+      } else {
+        return {'success': false, 'message': responseData['error'] ?? 'Failed to get AI recommendations'};
+      }
+    } catch (e) {
+      return {'success': false, 'message': 'Network error during AI recommendations request: $e'};
     }
   }
 }

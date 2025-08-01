@@ -6,7 +6,7 @@ import 'package:learnflow_ai/models/question.dart';
 import 'package:learnflow_ai/models/quiz_attempt.dart';
 import 'package:learnflow_ai/services/api_service.dart';
 import 'package:learnflow_ai/services/database_service.dart';
-import 'package:learnflow_ai/models/student.dart';
+import 'package:learnflow_ai/models/student.dart'; // Import the Student model
 import 'package:uuid/uuid.dart'; // For generating UUIDs
 
 class LessonDetailScreen extends StatefulWidget {
@@ -24,7 +24,7 @@ class _LessonDetailScreenState extends State<LessonDetailScreen> {
   List<Question> _questions = [];
   bool _isLoading = true;
   String? _errorMessage;
-  Student? _currentStudent;
+  Student? _currentStudent; // Store the full Student object
 
   final Map<String, QuestionAttemptState> _questionStates = {};
 
@@ -57,42 +57,49 @@ class _LessonDetailScreenState extends State<LessonDetailScreen> {
       }
 
       // Fetch student profile locally first
-      _currentStudent = await _databaseService.getStudent(currentUserId);
+      _currentStudent = await _databaseService.getStudentByUserId(currentUserId);
       if (_currentStudent != null) {
-        print('LessonDetailScreen: Student profile loaded from local DB: ${_currentStudent?.user?.username}, ID Code: ${_currentStudent?.studentIdCode}');
+        print('LessonDetailScreen: Student profile loaded from local DB: ${_currentStudent?.user?.username}, ID Code: ${_currentStudent?.studentIdCode}, UUID: ${_currentStudent?.uuid}');
       }
 
-      if (_currentStudent == null || _currentStudent!.studentIdCode == null) {
-        // If not found locally or studentIdCode is missing, try API
-        final fetchedStudent = await _apiService.fetchCurrentStudentProfile();
-        if (fetchedStudent == null) {
+      // Always try to fetch from API to get the latest student data, including UUID
+      final fetchedStudent = await _apiService.fetchCurrentStudentProfile();
+      if (fetchedStudent == null) {
+        // If API fetch fails AND local student is null, then error
+        if (_currentStudent == null) {
           _errorMessage = 'Could not fetch student profile. Cannot record quiz attempts.';
           _isLoading = false;
           setState(() {});
           return;
         }
-        _currentStudent = fetchedStudent;
-        print('LessonDetailScreen: Student profile loaded from API: ${_currentStudent?.user?.username}, ID Code: ${_currentStudent?.studentIdCode}');
-
-        // If studentIdCode is still null/empty after API fetch, generate a local one
-        if (_currentStudent!.studentIdCode == null || _currentStudent!.studentIdCode!.isEmpty) {
-          final generatedId = 'LOCAL_STUDENT_${_currentStudent!.userId}_${const Uuid().v4().substring(0, 8)}';
-          _currentStudent = _currentStudent!.copyWith(studentIdCode: generatedId);
-          print('LessonDetailScreen: Generated local student_id_code: $generatedId as Django provided null.');
-
-          await _databaseService.updateStudent(_currentStudent!); // Update local DB with generated ID
-          print('LessonDetailScreen: Updated local student profile with generated ID code.');
-        }
+        // If API fetch fails but local student exists, proceed with local data
+        print('LessonDetailScreen: Failed to fetch student profile from API, using local data.');
       } else {
-         // If a student profile exists locally, check if the API has a more recent studentIdCode
-         final fetchedStudent = await _apiService.fetchCurrentStudentProfile();
-         if (fetchedStudent != null && fetchedStudent.studentIdCode != null && fetchedStudent.studentIdCode!.isNotEmpty) {
-           if (_currentStudent!.studentIdCode != fetchedStudent.studentIdCode) {
-             _currentStudent = _currentStudent!.copyWith(studentIdCode: fetchedStudent.studentIdCode);
-             await _databaseService.updateStudent(_currentStudent!);
-             print('LessonDetailScreen: Updated local student_id_code from API: ${fetchedStudent.studentIdCode}');
-           }
-         }
+        _currentStudent = fetchedStudent; // Use the latest from API
+        // Update local DB with fetched student profile (including UUID)
+        await _databaseService.insertStudent(_currentStudent!);
+        print('LessonDetailScreen: Student profile loaded/updated from API: ${_currentStudent?.user?.username}, ID Code: ${_currentStudent?.studentIdCode}, UUID: ${_currentStudent?.uuid}');
+      }
+
+      // If student_id_code is null/empty, generate a local one for offline use
+      // Note: This local ID is primarily for internal consistency if backend doesn't provide one.
+      // The actual student UUID is used for API sync.
+      if (_currentStudent?.studentIdCode == null || _currentStudent!.studentIdCode!.isEmpty) {
+        // Ensure userId is not null before generating the local ID
+        final int effectiveUserId = _currentStudent!.userId ?? 0; // Use 0 or handle error if userId is null
+        final generatedId = 'LOCAL_STUDENT_${effectiveUserId}_${const Uuid().v4().substring(0, 8)}';
+        _currentStudent = _currentStudent!.copyWith(studentIdCode: generatedId);
+        print('LessonDetailScreen: Generated local student_id_code: $generatedId as Django provided null/empty.');
+        await _databaseService.updateStudent(_currentStudent!); // Update local DB with generated ID
+        print('LessonDetailScreen: Updated local student profile with generated ID code.');
+      }
+
+      // Ensure student UUID is present
+      if (_currentStudent != null && (_currentStudent!.uuid == null || _currentStudent!.uuid!.isEmpty)) {
+        final generatedUuid = const Uuid().v4();
+        _currentStudent = _currentStudent!.copyWith(uuid: generatedUuid);
+        await _databaseService.updateStudent(_currentStudent!);
+        print('LessonDetailScreen: Generated and saved local student UUID: $generatedUuid');
       }
 
       // Load questions from local database first
@@ -168,15 +175,33 @@ class _LessonDetailScreenState extends State<LessonDetailScreen> {
 
 
   void _submitAnswer(Question question, String? submittedAnswer) async {
-    if (_currentStudent == null || _currentStudent!.studentIdCode == null || _currentStudent!.studentIdCode!.isEmpty) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Error: Student profile or ID code not loaded. Cannot record attempt.')),
-      );
-      print('Error: _currentStudent is null or studentIdCode is empty/null during _submitAnswer.');
+    final apiQuestionUuids = _questions.map((q) => q.uuid).toList();
+    if (!apiQuestionUuids.contains(question.uuid)) {
+      print('Error: Attempted to submit answer for a question not present in backend.');
       return;
     }
 
-    print('LessonDetailScreen: Using studentIdCode for QuizAttempt: ${_currentStudent!.studentIdCode}');
+    // Check if _currentStudent or its uuid is null.
+    // If uuid is null, we cannot proceed as it's required for QuizAttempt.
+    if (_currentStudent == null || _currentStudent!.uuid == null || _currentStudent!.uuid!.isEmpty) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Error: Student profile or UUID not loaded. Cannot record attempt.')),
+      );
+      print('Error: _currentStudent is null or student UUID is empty during _submitAnswer.');
+      return;
+    }
+
+    // NEW: Check if studentUserId is null
+    if (_currentStudent!.userId == null) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Error: Student User ID not available. Cannot record attempt.')),
+      );
+      print('Error: _currentStudent!.userId is null during _submitAnswer.');
+      return;
+    }
+
+    print('LessonDetailScreen: Using student UUID for QuizAttempt: ${_currentStudent!.uuid}');
+    print('LessonDetailScreen: Using student User ID for QuizAttempt: ${_currentStudent!.userId}');
 
 
     setState(() {
@@ -212,8 +237,9 @@ class _LessonDetailScreenState extends State<LessonDetailScreen> {
 
     final quizAttempt = QuizAttempt(
       uuid: const Uuid().v4(),
-      studentUserId: _currentStudent!.userId,
-      studentIdCode: _currentStudent!.studentIdCode, // Pass the studentIdCode
+      studentUserId: _currentStudent!.userId!, // Use ! to assert non-null after the check
+      studentUuid: _currentStudent!.uuid!, // Use ! to assert non-null after the check
+      studentIdCode: _currentStudent!.studentIdCode, // Pass the studentIdCode (local or from API)
       questionUuid: question.uuid,
       submittedAnswer: submittedAnswer ?? '',
       isCorrect: _questionStates[question.uuid]!.isAnswerCorrect,
@@ -222,7 +248,7 @@ class _LessonDetailScreenState extends State<LessonDetailScreen> {
       rawAiResponse: null, // Placeholder for actual raw AI response
       attemptTimestamp: DateTime.now(),
       syncStatus: 'PENDING', // Mark as pending sync
-      deviceId: 'flutter-app-device', // Placeholder device ID
+      deviceId: 'flutter-app-device', // Example device ID
       // Add lessonTitle and questionTextPreview for easier display in SyncStatusScreen
       lessonTitle: widget.lesson.title, // Pass lesson title
       questionTextPreview: question.questionText.length > 50 ? '${question.questionText.substring(0, 50)}...' : question.questionText, // Pass question text preview
@@ -263,6 +289,21 @@ class _LessonDetailScreenState extends State<LessonDetailScreen> {
           ],
         );
       },
+    );
+  }
+
+  // This is the CORRECT declaration of _buildInfoChip (removed duplicate)
+  Widget _buildInfoChip(IconData icon, String text, Color color) {
+    return Chip(
+      avatar: Icon(icon, size: 22, color: color), // Larger icon
+      label: Text(
+        text,
+        style: TextStyle(color: color, fontWeight: FontWeight.bold, fontSize: 15), // Slightly larger text
+      ),
+      backgroundColor: color.withOpacity(0.2), // More opaque background
+      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)), // More rounded
+      side: BorderSide(color: color.withOpacity(0.7), width: 2), // Thicker, clearer border
+      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8), // More padding
     );
   }
 
@@ -546,13 +587,8 @@ class _LessonDetailScreenState extends State<LessonDetailScreen> {
                                                   ),
                                                 ),
                                                 const SizedBox(height: 18),
-                                                if (questionState.feedbackMessage != null)
-                                                  Text(
-                                                    'Feedback: ${questionState.feedbackMessage!}',
-                                                    style: TextStyle(fontSize: 17, color: Colors.blueGrey.shade900), // Darker blue-grey
-                                                  ),
-                                                const SizedBox(height: 12),
-                                                Row(
+                                                if (questionState.feedbackScore != null)
+                                                  Row(
                                                   children: [
                                                     const Text(
                                                       'Score: ',
@@ -629,21 +665,6 @@ class _LessonDetailScreenState extends State<LessonDetailScreen> {
     } else {
       _showCompletionDialog();
     }
-  }
-
-
-  Widget _buildInfoChip(IconData icon, String text, Color color) {
-    return Chip(
-      avatar: Icon(icon, size: 22, color: color), // Larger icon
-      label: Text(
-        text,
-        style: TextStyle(color: color, fontWeight: FontWeight.bold, fontSize: 15), // Slightly larger text
-      ),
-      backgroundColor: color.withOpacity(0.2), // More opaque background
-      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)), // More rounded
-      side: BorderSide(color: color.withOpacity(0.7), width: 2), // Thicker, clearer border
-      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8), // More padding
-    );
   }
 }
 

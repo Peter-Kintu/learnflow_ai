@@ -43,7 +43,6 @@ class _LessonsScreenState extends State<LessonsScreen> {
       print('LessonsScreen: Fetched current user: ${_currentUser?.username}, isStaff: ${_currentUser?.isStaff}');
 
       print('LessonsScreen: Attempting to load lessons from local database...');
-      // CORRECTED: Changed getAllLessons to getLessons
       List<Lesson> localLessons = await _databaseService.getLessons();
 
       if (localLessons.isNotEmpty) {
@@ -128,7 +127,7 @@ class _LessonsScreenState extends State<LessonsScreen> {
         elevation: 0,
         actions: [
           // Only show these buttons if the current user is staff
-          if (_currentUser != null ) ...[ // Ensure isStaff check
+          // if (_currentUser?.isStaff == true) ...[ // Ensure isStaff check
             IconButton(
               icon: const Icon(Icons.web_asset_rounded, size: 30), // Larger, rounded icon
               tooltip: 'Go to Teacher Dashboard (Web)',
@@ -139,7 +138,7 @@ class _LessonsScreenState extends State<LessonsScreen> {
               tooltip: 'Download Teacher Report (PDF)',
               onPressed: () => _launchDjangoTeacherDashboardUrl(downloadPdf: true),
             ),
-          ],
+        //  ],
           IconButton(
             icon: const Icon(Icons.refresh_rounded, size: 30), // Larger, rounded icon
             tooltip: 'Refresh Lessons',

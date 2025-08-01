@@ -181,6 +181,8 @@ class _AddQuestionScreenState extends State<AddQuestionScreen> {
         difficultyLevel: _selectedDifficulty!,
         expectedTimeSeconds: int.tryParse(_expectedTimeController.text),
         aiGeneratedFeedback: null, // AI feedback will be generated on attempt
+        createdAt: DateTime.now(),      // <-- Add this
+        updatedAt: DateTime.now(),      // <-- Add this
       );
 
       // Call addQuestion with the Question object

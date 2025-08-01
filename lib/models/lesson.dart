@@ -1,5 +1,7 @@
 // learnflow_ai/flutter_app/lib/models/lesson.dart
 
+import 'dart:convert'; // For JSON encoding/decoding (though not directly used in ==/hashCode, it's part of the file)
+
 class Lesson {
   final String uuid;
   final String title;
@@ -89,4 +91,19 @@ class Lesson {
       prerequisites: (json['prerequisites'] as List?)?.map((e) => e as String).toList(),
     );
   }
+
+  // NEW: Override the equality operator (==)
+  // This tells Dart that two Lesson objects are equal if their UUIDs are the same.
+  @override
+  bool operator ==(Object other) {
+    if (identical(this, other)) return true; // Same instance
+    return other is Lesson && // Check if 'other' is a Lesson
+           uuid == other.uuid; // Compare based on the unique UUID
+  }
+
+  // NEW: Override hashCode
+  // If two objects are equal according to ==, their hash codes must be the same.
+  // We use the UUID's hash code as the Lesson's hash code.
+  @override
+  int get hashCode => uuid.hashCode;
 }

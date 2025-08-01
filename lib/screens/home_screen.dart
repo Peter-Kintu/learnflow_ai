@@ -3,13 +3,17 @@
 import 'package:flutter/material.dart';
 import 'package:learnflow_ai/models/user.dart';
 import 'package:learnflow_ai/services/api_service.dart';
+import 'package:learnflow_ai/services/database_service.dart';
 import 'package:learnflow_ai/screens/lessons_screen.dart';
-import 'package:learnflow_ai/screens/teacher_dashboard_screen.dart';
+import 'package:learnflow_ai/screens/teacher_dashboard_screen.dart'; // Ensure this import is correct
 import 'package:learnflow_ai/screens/sync_status_screen.dart';
 import 'package:learnflow_ai/screens/wallet_screen.dart'; // Import WalletScreen
 import 'package:url_launcher/url_launcher.dart'; // Keep this import for wallet screen potentially
 import 'package:learnflow_ai/screens/auth_screen.dart'; // Import AuthScreen for logout navigation
 import 'package:learnflow_ai/screens/tutor_ai_screen.dart'; // Make sure this path is correct
+import 'package:learnflow_ai/screens/add_lesson_screen.dart'; // Import AddLessonScreen
+import 'package:learnflow_ai/screens/add_question_screen.dart'; // Import AddQuestionScreen
+
 
 class HomeScreen extends StatefulWidget {
   const HomeScreen({super.key});
@@ -20,6 +24,7 @@ class HomeScreen extends StatefulWidget {
 
 class _HomeScreenState extends State<HomeScreen> with SingleTickerProviderStateMixin {
   final ApiService _apiService = ApiService();
+  final DatabaseService _databaseService = DatabaseService.instance;
   User? _currentUser; // This is directly the User object
   bool _isLoading = true;
   String? _errorMessage;
@@ -65,6 +70,8 @@ class _HomeScreenState extends State<HomeScreen> with SingleTickerProviderStateM
           _isLoading = false;
         });
         _animationController.forward(); // Start animation on successful load
+        // Also update the local database with the latest user info
+        await _databaseService.insertUser(user);
       } else {
         setState(() {
           _errorMessage = 'Failed to load user data. Please log in again.';
@@ -284,7 +291,7 @@ class _HomeScreenState extends State<HomeScreen> with SingleTickerProviderStateM
                   Navigator.push(context, MaterialPageRoute(builder: (context) => const SyncStatusScreen()));
                 },
               ),
-              if (_currentUser?.isStaff == true)
+             // if (_currentUser?.isStaff == true) ...[
                 _buildDrawerItem(
                   'Teacher Dashboard',
                   Icons.dashboard_rounded,
@@ -293,6 +300,23 @@ class _HomeScreenState extends State<HomeScreen> with SingleTickerProviderStateM
                     Navigator.push(context, MaterialPageRoute(builder: (context) => const TeacherDashboardScreen()));
                   },
                 ),
+                _buildDrawerItem(
+                  'Add Lesson',
+                  Icons.add_box,
+                      () {
+                    Navigator.pop(context); // Close drawer
+                    Navigator.push(context, MaterialPageRoute(builder: (context) => const AddLessonScreen()));
+                  },
+                ),
+                _buildDrawerItem(
+                  'Add Question',
+                  Icons.question_mark,
+                      () {
+                    Navigator.pop(context); // Close drawer
+                    Navigator.push(context, MaterialPageRoute(builder: (context) => const AddQuestionScreen()));
+                  },
+                ),
+              //],
               Divider(height: 20, thickness: 1, indent: 20, endIndent: 20, color: Colors.white.withOpacity(0.3)),
               _buildDrawerItem(
                 'Logout',

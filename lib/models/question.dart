@@ -4,14 +4,16 @@ import 'dart:convert'; // For JSON encoding/decoding
 
 class Question {
   final String uuid;
-  final String lessonUuid; // This is the field that expects the UUID string
+  final String lessonUuid;
   final String questionText;
-  final String questionType; // 'MCQ' or 'SA'
-  final List<String>? options; // For MCQ, stored as JSON string in DB
+  final String questionType;
+  final List<String>? options;
   final String correctAnswerText;
   final String difficultyLevel;
-  final int? expectedTimeSeconds; // Added this field
-  final String? aiGeneratedFeedback; // Added this field
+  final int? expectedTimeSeconds;
+  final String? aiGeneratedFeedback;
+  final DateTime createdAt;
+  final DateTime updatedAt;
 
   Question({
     required this.uuid,
@@ -21,8 +23,10 @@ class Question {
     this.options,
     required this.correctAnswerText,
     required this.difficultyLevel,
-    this.expectedTimeSeconds, // Include in constructor
-    this.aiGeneratedFeedback, // Include in constructor
+    this.expectedTimeSeconds,
+    this.aiGeneratedFeedback,
+    required this.createdAt,
+    required this.updatedAt,
   });
 
   // Convert a Question object into a Map object (for SQLite)
@@ -32,32 +36,34 @@ class Question {
       'lesson_uuid': lessonUuid,
       'question_text': questionText,
       'question_type': questionType,
-      // Store options as JSON string
       'options': options != null ? jsonEncode(options) : null,
-      'correct_answer': correctAnswerText, // Use backend's field name for consistency with DB
+      'correct_answer_text': correctAnswerText,
       'difficulty_level': difficultyLevel,
-      'expected_time_seconds': expectedTimeSeconds, // Include in map
-      'ai_generated_feedback': aiGeneratedFeedback, // Include in map
+      'expected_time_seconds': expectedTimeSeconds,
+      'ai_generated_feedback': aiGeneratedFeedback,
+      'created_at': createdAt.toIso8601String(),
+      'updated_at': updatedAt.toIso8601String(),
     };
   }
 
-  // Convert a Map object into a Question object (from SQLite)
+  // Convert a Map object into a Lesson object (from SQLite)
   factory Question.fromMap(Map<String, dynamic> map) {
     return Question(
       uuid: map['uuid'] as String,
       lessonUuid: map['lesson_uuid'] as String,
       questionText: map['question_text'] as String,
       questionType: map['question_type'] as String,
-      // Correctly decode options JSON string back to List<String>
-      options: map['options'] != null && map['options'] is String
-          ? (jsonDecode(map['options'] as String) as List<dynamic>)
-              .map((e) => e.toString())
-              .toList()
-          : null,
-      correctAnswerText: map['correct_answer'] as String, // Use backend's field name for consistency with DB
+      options: map['options'] == null
+          ? null
+          : (map['options'] is String
+              ? List<String>.from(jsonDecode(map['options'] as String))
+              : List<String>.from(map['options'] as List)),
+      correctAnswerText: map['correct_answer_text']?.toString() ?? '',
       difficultyLevel: map['difficulty_level'] as String,
-      expectedTimeSeconds: map['expected_time_seconds'] as int?, // Retrieve from map
-      aiGeneratedFeedback: map['ai_generated_feedback'] as String?, // Retrieve from map
+      expectedTimeSeconds: map['expected_time_seconds'] as int?,
+      aiGeneratedFeedback: map['ai_generated_feedback'] as String?,
+      createdAt: DateTime.parse(map['created_at'] as String),
+      updatedAt: DateTime.parse(map['updated_at'] as String),
     );
   }
 
@@ -65,29 +71,47 @@ class Question {
   Map<String, dynamic> toJson() {
     return {
       'uuid': uuid,
-      'lesson': lessonUuid, // Use backend's field name 'lesson' for UUID
+      'lesson_uuid': lessonUuid,
       'question_text': questionText,
       'question_type': questionType,
       'options': options,
-      'correct_answer_text': correctAnswerText, // Use backend's field name
+      'correct_answer_text': correctAnswerText,
       'difficulty_level': difficultyLevel,
-      'expected_time_seconds': expectedTimeSeconds, // Include in JSON
-      'ai_generated_feedback': aiGeneratedFeedback, // Include in JSON
+      'expected_time_seconds': expectedTimeSeconds,
+      'ai_generated_feedback': aiGeneratedFeedback,
     };
   }
 
   // Factory constructor to create a Question from JSON (from API)
-  factory Question.fromJson(Map<String, dynamic> json) {
+  factory Question.fromJson(Map<String, dynamic> json, {String? lessonUuidFromContext}) {
     return Question(
       uuid: json['uuid'] as String,
-      lessonUuid: json['lesson_uuid'] as String, // This will now correctly map to the new field from Django
+      lessonUuid: json['lesson_uuid'] as String? ?? lessonUuidFromContext ?? '',
       questionText: json['question_text'] as String,
       questionType: json['question_type'] as String,
-      options: (json['options'] as List?)?.map((e) => e as String).toList(),
-      correctAnswerText: json['correct_answer_text'] as String,
+      options: json['options'] == null
+          ? null
+          : (json['options'] is String
+              ? List<String>.from(jsonDecode(json['options'] as String))
+              : List<String>.from(json['options'] as List)),
+      correctAnswerText: json['correct_answer_text']?.toString() ?? '',
       difficultyLevel: json['difficulty_level'] as String,
-      expectedTimeSeconds: json['expected_time_seconds'] as int?, // Include from JSON
+      expectedTimeSeconds: json['expected_time_seconds'] as int?,
       aiGeneratedFeedback: json['ai_generated_feedback'] as String?,
+      createdAt: DateTime.parse(json['created_at'] as String),
+      updatedAt: DateTime.parse(json['updated_at'] as String),
     );
   }
+
+  // Override the equality operator (==)
+  @override
+  bool operator ==(Object other) {
+    if (identical(this, other)) return true;
+    return other is Question &&
+           uuid == other.uuid;
+  }
+
+  // Override hashCode
+  @override
+  int get hashCode => uuid.hashCode;
 }

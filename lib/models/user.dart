@@ -2,20 +2,30 @@
 
 class User {
   final int id; // User ID (Primary Key)
-  final String username;
-  final String? email;
+  final String? username; // Made nullable
+  final String? email;    // Made nullable
   final bool isStaff; // To distinguish between student and teacher/admin
 
   User({
     required this.id, // ID is required once a User object is created/fetched
-    required this.username,
+    this.username,
     this.email,
     this.isStaff = false,
   });
 
+  // Factory constructor to create a User from a Map (e.g., from API or SQLite)
+  factory User.fromMap(Map<String, dynamic> map) {
+    return User(
+      id: map['id'] as int,
+      username: map['username'] as String?, // Handle nullable
+      email: map['email'] as String?,       // Handle nullable
+      isStaff: (map['is_staff'] as int? ?? 0) == 1, // SQLite stores bool as int
+    );
+  }
+
+  // Factory constructor to create a User from JSON (from API)
   factory User.fromJson(Map<String, dynamic> json) {
     // Handle cases where 'id' might come as 'user_id' or just 'id'
-    // Ensure 'id' is always an integer. If missing, it's a critical error.
     final int? userId = json['user_id'] ?? json['id'];
     if (userId == null) {
       throw FormatException("User ID is missing from JSON: $json");
@@ -23,22 +33,18 @@ class User {
 
     return User(
       id: userId,
-      username: json['username'],
-      email: json['email'],
-      isStaff: json['is_staff'] ?? false, // Default to false if not provided
+      username: json['username'] as String?, // Handle nullable
+      email: json['email'] as String?,       // Handle nullable
+      isStaff: json['is_staff'] as bool? ?? false, // Default to false if not provided
     );
   }
 
-  Map<String, dynamic> toJson() {
-    return {
-      'id': id,
-      'username': username,
-      'email': email,
-      'is_staff': isStaff,
-    };
+  // New factory constructor to create a User object when only the ID is known
+  factory User.fromId(int id) {
+    return User(id: id, username: null, email: null, isStaff: false);
   }
 
-  // Method to convert to a format suitable for local storage (SQLite)
+  // Convert a User object into a Map object (for SQLite)
   Map<String, dynamic> toMap() {
     return {
       'id': id,
@@ -48,13 +54,18 @@ class User {
     };
   }
 
-  // Method to create from a map (for local storage retrieval)
-  factory User.fromMap(Map<String, dynamic> map) {
-    return User(
-      id: map['id'],
-      username: map['username'],
-      email: map['email'],
-      isStaff: map['is_staff'] == 1, // Convert integer back to boolean
-    );
+  // Convert a User object into a JSON object (for API)
+  Map<String, dynamic> toJson() {
+    return {
+      'id': id,
+      'username': username,
+      'email': email,
+      'is_staff': isStaff,
+    };
+  }
+
+  @override
+  String toString() {
+    return 'User(id: $id, username: $username, email: $email, isStaff: $isStaff)';
   }
 }

@@ -1,5 +1,7 @@
 // learnflow_ai/flutter_app/lib/services/database_service.dart
 
+import 'dart:async';
+import 'dart:convert'; // For JSON encoding/decoding for complex types
 import 'package:sqflite/sqflite.dart';
 import 'package:path/path.dart';
 import 'package:learnflow_ai/models/user.dart';
@@ -8,160 +10,256 @@ import 'package:learnflow_ai/models/lesson.dart';
 import 'package:learnflow_ai/models/question.dart';
 import 'package:learnflow_ai/models/quiz_attempt.dart';
 import 'package:learnflow_ai/models/student_progress.dart';
-import 'dart:convert'; // For JSON encoding/decoding for complex types
+import 'package:flutter/foundation.dart' show kIsWeb; // For kIsWeb
+import 'package:sqflite_common_ffi_web/sqflite_ffi_web.dart'; // For web support
 
 class DatabaseService {
-  static Database? _database; // Private instance of the database
-  static final DatabaseService instance = DatabaseService._constructor(); // Singleton instance
+  static Database? _database;
+  static final DatabaseService instance = DatabaseService._constructor();
 
-  // Private constructor for the singleton pattern
   DatabaseService._constructor();
 
-  // Getter for the database instance
   Future<Database> get database async {
     if (_database != null) {
       print('DatabaseService: Database already initialized, returning existing instance.');
       return _database!;
     }
     print('DatabaseService: Database not initialized, calling _initDatabase()...');
-    _database = await _initDatabase(); // Initialize if null
+    _database = await _initDatabase();
     print('DatabaseService: _initDatabase() completed.');
     return _database!;
   }
 
-  // Initialize the database
   Future<Database> _initDatabase() async {
-    try {
-      print('DatabaseService: _initDatabase() called.');
-      String databasesPath = await getDatabasesPath();
-      String path = join(databasesPath, 'learnflow_ai.db');
-      print('DatabaseService: Database path: $path');
-
-      return await openDatabase(
-        path,
-        version: 2, // IMPORTANT: Increment version to trigger onUpgrade or onCreate if DB is deleted
-        onCreate: (db, version) async {
-          print('DatabaseService: onCreate called. Creating tables...');
-          // Create User table
-          await db.execute('''
-            CREATE TABLE users(
-              id INTEGER PRIMARY KEY,
-              username TEXT,
-              email TEXT,
-              is_staff INTEGER
-            )
-          ''');
-          print('Table "users" created.');
-
-          // Create Student table
-          await db.execute('''
-            CREATE TABLE students(
-              user_id INTEGER PRIMARY KEY,
-              student_id_code TEXT,
-              grade_level TEXT,
-              class_name TEXT,
-              date_registered TEXT,
-              last_device_sync TEXT,
-              gender TEXT,
-              date_of_birth TEXT,
-              school_name TEXT,
-              wallet_address TEXT,
-              FOREIGN KEY (user_id) REFERENCES users (id) ON DELETE CASCADE
-            )
-          ''');
-          print('Table "students" created.');
-
-          // Create Lesson table
-          await db.execute('''
-            CREATE TABLE lessons(
-              uuid TEXT PRIMARY KEY,
-              title TEXT,
-              description TEXT,
-              subject TEXT,
-              difficulty_level TEXT,
-              version INTEGER,
-              created_at TEXT,
-              updated_at TEXT,
-              lesson_file TEXT
-            )
-          ''');
-          print('Table "lessons" created.');
-
-          // Create Question table - ADDED expected_time_seconds
-          await db.execute('''
-            CREATE TABLE questions(
-              uuid TEXT PRIMARY KEY,
-              lesson_uuid TEXT,
-              question_text TEXT,
-              question_type TEXT,
-              options TEXT, -- Stored as JSON string
-              correct_answer TEXT,
-              difficulty_level TEXT,
-              expected_time_seconds INTEGER, -- ADDED THIS COLUMN
-              ai_generated_feedback TEXT,
-              FOREIGN KEY (lesson_uuid) REFERENCES lessons (uuid) ON DELETE CASCADE
-            )
-          ''');
-          print('Table "questions" created.');
-
-          // Create QuizAttempt table
-          await db.execute('''
-            CREATE TABLE quiz_attempts(
-              uuid TEXT PRIMARY KEY,
-              student_user_id INTEGER,
-              student_id_code TEXT,
-              question_uuid TEXT,
-              submitted_answer TEXT,
-              is_correct INTEGER,
-              score REAL,
-              ai_feedback_text TEXT,
-              raw_ai_response TEXT,
-              attempt_timestamp TEXT,
-              synced_at TEXT,
-              sync_status TEXT,
-              device_id TEXT,
-              lesson_title TEXT,
-              question_text_preview TEXT,
-              FOREIGN KEY (student_user_id) REFERENCES students (user_id) ON DELETE CASCADE,
-              FOREIGN KEY (question_uuid) REFERENCES questions (uuid) ON DELETE CASCADE
-            )
-          ''');
-          print('Table "quiz_attempts" created.');
-
-          // Create StudentProgress table
-          await db.execute('''
-            CREATE TABLE student_progress(
-              uuid TEXT PRIMARY KEY,
-              student_user_id INTEGER UNIQUE,
-              overall_progress_data TEXT, -- Stored as JSON string
-              last_updated TEXT,
-              FOREIGN KEY (student_user_id) REFERENCES students (user_id) ON DELETE CASCADE
-            )
-          ''');
-          print('Table "student_progress" created.');
-
-          print('DatabaseService: All tables created successfully.');
-        },
-        onUpgrade: (db, oldVersion, newVersion) async {
-          print('DatabaseService: onUpgrade called. Old version: $oldVersion, New version: $newVersion');
-          if (oldVersion < 2) {
-            // Add expected_time_seconds column if upgrading from version 1
-            await db.execute('ALTER TABLE questions ADD COLUMN expected_time_seconds INTEGER');
-            print('DatabaseService: Added expected_time_seconds column to questions table.');
-          }
-          // Add other migration steps for future versions here
-        },
-      );
-    } catch (e) {
-      print('DatabaseService: Error initializing database: $e');
-      rethrow; // Rethrow the error to be caught higher up
+    print('DatabaseService: _initDatabase() called.');
+    String path;
+    if (kIsWeb) {
+      databaseFactory = databaseFactoryFfiWeb;
+      path = '/learnflow_ai.db'; // A logical path for web
+    } else {
+      path = join(await getDatabasesPath(), 'learnflow_ai.db');
     }
+    print('DatabaseService: Database path: $path');
+
+    return await openDatabase(
+      path,
+      version: 4, // IMPORTANT: Increment version to trigger onUpgrade or onCreate if DB is deleted
+      onCreate: _onCreate,
+      onUpgrade: _onUpgrade, // Add onUpgrade for schema changes
+    );
   }
 
-  // --- CRUD Operations for User ---
+  Future _onCreate(Database db, int version) async {
+    print('DatabaseService: onCreate called. Creating tables...');
+    // Create User table
+    await db.execute('''
+      CREATE TABLE users(
+        id INTEGER PRIMARY KEY,
+        username TEXT NOT NULL UNIQUE,
+        email TEXT,
+        is_staff INTEGER NOT NULL DEFAULT 0
+      )
+    ''');
+    print('Table "users" created.');
+
+    // Create Student table (UUID as PK, user_id as unique index)
+    await db.execute('''
+      CREATE TABLE students(
+        uuid TEXT PRIMARY KEY,
+        user_id INTEGER NOT NULL UNIQUE,
+        student_id_code TEXT,
+        grade_level TEXT,
+        class_name TEXT,
+        date_registered TEXT,
+        last_device_sync TEXT,
+        gender TEXT,
+        date_of_birth TEXT,
+        school_name TEXT,
+        wallet_address TEXT
+        -- FOREIGN KEY (user_id) REFERENCES users (id) ON DELETE CASCADE -- Removed for now to avoid circular dependency issues during creation/upgrade
+      )
+    ''');
+    print('Table "students" created.');
+
+    // Create Lesson table
+    await db.execute('''
+      CREATE TABLE lessons(
+        uuid TEXT PRIMARY KEY,
+        title TEXT NOT NULL,
+        description TEXT,
+        subject TEXT,
+        difficulty_level TEXT,
+        version INTEGER NOT NULL,
+        created_at TEXT NOT NULL,
+        updated_at TEXT NOT NULL,
+        lesson_file TEXT,
+        prerequisites TEXT
+      )
+    ''');
+    print('Table "lessons" created.');
+
+    // Create Question table
+    await db.execute('''
+      CREATE TABLE questions(
+        uuid TEXT PRIMARY KEY,
+        lesson_uuid TEXT NOT NULL,
+        question_text TEXT NOT NULL,
+        question_type TEXT NOT NULL,
+        options TEXT, -- Stored as JSON string
+        correct_answer_text TEXT, -- Renamed from correct_answer to match model
+        difficulty_level TEXT NOT NULL,
+        expected_time_seconds INTEGER,
+        ai_generated_feedback TEXT,
+        created_at TEXT NOT NULL, -- Added missing columns
+        updated_at TEXT NOT NULL, -- Added missing columns
+        FOREIGN KEY (lesson_uuid) REFERENCES lessons (uuid) ON DELETE CASCADE
+      )
+    ''');
+    print('Table "questions" created.');
+
+    // Create QuizAttempt table (student_uuid added)
+    await db.execute('''
+      CREATE TABLE quiz_attempts(
+        uuid TEXT PRIMARY KEY,
+        student_user_id INTEGER NOT NULL,
+        student_uuid TEXT NOT NULL, -- NEW: Add student_uuid column
+        student_id_code TEXT,
+        question_uuid TEXT NOT NULL,
+        submitted_answer TEXT NOT NULL,
+        is_correct INTEGER NOT NULL,
+        score REAL NOT NULL,
+        ai_feedback_text TEXT,
+        raw_ai_response TEXT,
+        attempt_timestamp TEXT NOT NULL,
+        synced_at TEXT,
+        sync_status TEXT NOT NULL,
+        device_id TEXT, -- Made nullable
+        lesson_title TEXT,
+        question_text_preview TEXT,
+        FOREIGN KEY (student_uuid) REFERENCES students (uuid) ON DELETE CASCADE, -- Link to student's UUID
+        FOREIGN KEY (question_uuid) REFERENCES questions (uuid) ON DELETE CASCADE
+      )
+    ''');
+    print('Table "quiz_attempts" created.');
+
+    // Create StudentProgress table
+    await db.execute('''
+      CREATE TABLE student_progress(
+        uuid TEXT PRIMARY KEY,
+        student_user_id INTEGER UNIQUE,
+        overall_progress_data TEXT, -- Stored as JSON string
+        last_updated TEXT,
+        FOREIGN KEY (student_user_id) REFERENCES users (id) ON DELETE CASCADE
+      )
+    ''');
+    print('Table "student_progress" created.');
+
+    print('DatabaseService: All tables created successfully.');
+  }
+
+  // Add onUpgrade method to handle schema changes for existing databases
+  Future _onUpgrade(Database db, int oldVersion, int newVersion) async {
+    print('DatabaseService: onUpgrade called. Old version: $oldVersion, New version: $newVersion');
+    if (oldVersion < 2) {
+      // This block would run if upgrading from a version 1 to 2
+      // Add expected_time_seconds column to questions table
+      await db.execute('ALTER TABLE questions ADD COLUMN expected_time_seconds INTEGER');
+      print('DatabaseService: Added expected_time_seconds column to questions table.');
+    }
+    if (oldVersion < 3) {
+      // This block runs if upgrading from version 2 to 3
+      // Add student_uuid column to quiz_attempts table
+      await db.execute('ALTER TABLE quiz_attempts ADD COLUMN student_uuid TEXT;');
+      print('Added student_uuid column to quiz_attempts table.');
+      // Update the foreign key constraint if necessary, but direct ALTER TABLE for FK is tricky.
+      // For simplicity in development, dropping and recreating tables is often done.
+    }
+    if (oldVersion < 4) {
+      // This block runs if upgrading from version 3 to 4
+      print('DatabaseService: Upgrading to version 4. Modifying students, questions and quiz_attempts tables.');
+
+      // Recreate students table to change primary key to UUID
+      await db.execute('DROP TABLE IF EXISTS students;');
+      print('Dropped old "students" table.');
+      await db.execute('''
+        CREATE TABLE students(
+          uuid TEXT PRIMARY KEY,
+          user_id INTEGER NOT NULL UNIQUE,
+          student_id_code TEXT,
+          grade_level TEXT,
+          class_name TEXT,
+          date_registered TEXT,
+          last_device_sync TEXT,
+          gender TEXT,
+          date_of_birth TEXT,
+          school_name TEXT,
+          wallet_address TEXT
+          -- FOREIGN KEY (user_id) REFERENCES users (id) ON DELETE CASCADE -- Removed for now to avoid circular dependency issues during creation/upgrade
+        )
+      ''');
+      print('Recreated "students" table with UUID as PRIMARY KEY.');
+
+      // Recreate questions table to add created_at and updated_at, and rename correct_answer
+      await db.execute('DROP TABLE IF EXISTS questions;');
+      print('Dropped old "questions" table.');
+      await db.execute('''
+        CREATE TABLE questions(
+          uuid TEXT PRIMARY KEY,
+          lesson_uuid TEXT NOT NULL,
+          question_text TEXT NOT NULL,
+          question_type TEXT NOT NULL,
+          options TEXT, -- Stored as JSON string
+          correct_answer_text TEXT, -- Renamed from correct_answer to match model
+          difficulty_level TEXT NOT NULL,
+          expected_time_seconds INTEGER,
+          ai_generated_feedback TEXT,
+          created_at TEXT NOT NULL, -- Added missing columns
+          updated_at TEXT NOT NULL, -- Added missing columns
+          FOREIGN KEY (lesson_uuid) REFERENCES lessons (uuid) ON DELETE CASCADE
+        )
+      ''');
+      print('Recreated "questions" table with new columns.');
+
+
+      // Recreate quiz_attempts to ensure correct FK to new students table and nullable device_id
+      await db.execute('DROP TABLE IF EXISTS quiz_attempts;');
+      print('Dropped old "quiz_attempts" table.');
+      await db.execute('''
+        CREATE TABLE quiz_attempts (
+          uuid TEXT PRIMARY KEY,
+          student_user_id INTEGER NOT NULL,
+          student_uuid TEXT NOT NULL, -- Ensure this is here
+          student_id_code TEXT,
+          question_uuid TEXT NOT NULL,
+          submitted_answer TEXT NOT NULL,
+          is_correct INTEGER NOT NULL,
+          score REAL NOT NULL,
+          ai_feedback_text TEXT,
+          raw_ai_response TEXT,
+          attempt_timestamp TEXT NOT NULL,
+          synced_at TEXT,
+          sync_status TEXT NOT NULL,
+          device_id TEXT, -- Now nullable
+          lesson_title TEXT,
+          question_text_preview TEXT,
+          FOREIGN KEY (student_uuid) REFERENCES students (uuid) ON DELETE CASCADE, -- Link to student's UUID
+          FOREIGN KEY (question_uuid) REFERENCES questions (uuid) ON DELETE CASCADE
+        )
+      ''');
+      print('Recreated "quiz_attempts" table with student_uuid FK and nullable device_id.');
+    }
+    // Add any other schema migrations here for future versions
+  }
+
+
+  // --- User Operations ---
   Future<int> insertUser(User user) async {
     final db = await database;
-    return await db.insert('users', user.toMap(), conflictAlgorithm: ConflictAlgorithm.replace);
+    return await db.insert(
+      'users',
+      user.toMap(),
+      conflictAlgorithm: ConflictAlgorithm.replace,
+    );
   }
 
   Future<User?> getUser(int id) async {
@@ -177,6 +275,19 @@ class DatabaseService {
     return null;
   }
 
+  Future<User?> getUserByUsername(String username) async {
+    final db = await database;
+    final List<Map<String, dynamic>> maps = await db.query(
+      'users',
+      where: 'username = ?',
+      whereArgs: [username],
+    );
+    if (maps.isNotEmpty) {
+      return User.fromMap(maps.first);
+    }
+    return null;
+  }
+
   Future<int> updateUser(User user) async {
     final db = await database;
     return await db.update(
@@ -184,6 +295,7 @@ class DatabaseService {
       user.toMap(),
       where: 'id = ?',
       whereArgs: [user.id],
+      conflictAlgorithm: ConflictAlgorithm.replace,
     );
   }
 
@@ -196,13 +308,33 @@ class DatabaseService {
     );
   }
 
-  // --- CRUD Operations for Student ---
+  // --- Student Operations ---
   Future<int> insertStudent(Student student) async {
     final db = await database;
-    return await db.insert('students', student.toMap(), conflictAlgorithm: ConflictAlgorithm.replace);
+    // Ensure UUID is used as primary key for insertion
+    return await db.insert(
+      'students',
+      student.toMap(),
+      conflictAlgorithm: ConflictAlgorithm.replace,
+    );
   }
 
-  Future<Student?> getStudent(int userId) async {
+  // Get student by UUID (new primary key)
+  Future<Student?> getStudent(String uuid) async {
+    final db = await database;
+    final List<Map<String, dynamic>> maps = await db.query(
+      'students',
+      where: 'uuid = ?',
+      whereArgs: [uuid],
+    );
+    if (maps.isNotEmpty) {
+      return Student.fromMap(maps.first);
+    }
+    return null;
+  }
+
+  // Get student by User ID (still useful for lookup)
+  Future<Student?> getStudentByUserId(int userId) async {
     final db = await database;
     final List<Map<String, dynamic>> maps = await db.query(
       'students',
@@ -217,24 +349,31 @@ class DatabaseService {
 
   Future<int> updateStudent(Student student) async {
     final db = await database;
+    // Handle null uuid for whereArgs
+    if (student.uuid == null || student.uuid.isEmpty) { // uuid is now non-nullable, check for empty
+      print('DatabaseService: Cannot update student. Student UUID is null or empty. Attempting insert instead.');
+      return await insertStudent(student); // Try to insert if UUID is missing for update
+    }
     return await db.update(
       'students',
       student.toMap(),
-      where: 'user_id = ?',
-      whereArgs: [student.userId],
+      where: 'uuid = ?',
+      whereArgs: [student.uuid], // student.uuid is now guaranteed non-null here
+      conflictAlgorithm: ConflictAlgorithm.replace,
     );
   }
 
-  Future<int> deleteStudent(int userId) async {
+  Future<int> deleteStudent(String uuid) async {
     final db = await database;
+    // Delete by UUID (new primary key)
     return await db.delete(
       'students',
-      where: 'user_id = ?',
-      whereArgs: [userId],
+      where: 'uuid = ?',
+      whereArgs: [uuid],
     );
   }
 
-  // --- CRUD Operations for Lesson ---
+  // --- Lesson Operations ---
   Future<int> insertLesson(Lesson lesson) async {
     final db = await database;
     return await db.insert('lessons', lesson.toMap(), conflictAlgorithm: ConflictAlgorithm.replace);
@@ -244,7 +383,6 @@ class DatabaseService {
     final db = await database;
     final List<Map<String, dynamic>> maps = await db.query('lessons');
     return List.generate(maps.length, (i) {
-      // Correctly handle lesson_file which can be null
       final Map<String, dynamic> map = Map<String, dynamic>.from(maps[i]);
       return Lesson.fromMap(map);
     });
@@ -282,15 +420,14 @@ class DatabaseService {
     );
   }
 
-  // --- CRUD Operations for Question ---
+  // --- Question Operations ---
   Future<int> insertQuestion(Question question) async {
     final db = await database;
-    // Convert options list to JSON string for storage
     final Map<String, dynamic> data = question.toMap();
+    // Ensure options are JSON encoded if not null
     if (question.options != null) {
       data['options'] = jsonEncode(question.options);
     }
-    // No need to handle expected_time_seconds here, it's directly in toMap()
     return await db.insert('questions', data, conflictAlgorithm: ConflictAlgorithm.replace);
   }
 
@@ -302,8 +439,8 @@ class DatabaseService {
       whereArgs: [lessonUuid],
     );
     return List.generate(maps.length, (i) {
-      // Decode options JSON string back to List<String>
       final Map<String, dynamic> map = Map<String, dynamic>.from(maps[i]);
+      // Decode options from JSON string back to List<String>
       if (map['options'] != null && map['options'] is String) {
         try {
           map['options'] = List<String>.from(jsonDecode(map['options']));
@@ -312,7 +449,7 @@ class DatabaseService {
           map['options'] = <String>[]; // Default to empty list on error
         }
       } else {
-        map['options'] = <String>[]; // Ensure it's a list even if null
+        map['options'] = <String>[]; // Ensure it's a list even if null initially
       }
       return Question.fromMap(map);
     });
@@ -327,6 +464,7 @@ class DatabaseService {
     );
     if (maps.isNotEmpty) {
       final Map<String, dynamic> map = Map<String, dynamic>.from(maps.first);
+      // Decode options from JSON string back to List<String>
       if (map['options'] != null && map['options'] is String) {
         try {
           map['options'] = List<String>.from(jsonDecode(map['options']));
@@ -345,6 +483,7 @@ class DatabaseService {
   Future<int> updateQuestion(Question question) async {
     final db = await database;
     final Map<String, dynamic> data = question.toMap();
+    // Ensure options are JSON encoded if not null
     if (question.options != null) {
       data['options'] = jsonEncode(question.options);
     }
@@ -365,10 +504,18 @@ class DatabaseService {
     );
   }
 
-  // --- CRUD Operations for QuizAttempt ---
+  // --- QuizAttempt Operations ---
   Future<int> insertQuizAttempt(QuizAttempt attempt) async {
     final db = await database;
-    return await db.insert('quiz_attempts', attempt.toMap(), conflictAlgorithm: ConflictAlgorithm.replace);
+    final Map<String, dynamic> data = attempt.toMap();
+    // Ensure rawAiResponse is JSON encoded if not null
+    if (attempt.rawAiResponse != null) {
+      data['raw_ai_response'] = jsonEncode(attempt.rawAiResponse);
+    }
+    if (data['student_uuid'] == null) {
+      print('DatabaseService: Warning: student_uuid is null for quiz attempt ${attempt.uuid}. This might cause issues.');
+    }
+    return await db.insert('quiz_attempts', data, conflictAlgorithm: ConflictAlgorithm.replace);
   }
 
   Future<List<QuizAttempt>> getQuizAttemptsByStudent(int studentUserId) async {
@@ -380,7 +527,17 @@ class DatabaseService {
       orderBy: 'attempt_timestamp DESC',
     );
     return List.generate(maps.length, (i) {
-      return QuizAttempt.fromMap(maps[i]);
+      final Map<String, dynamic> map = Map<String, dynamic>.from(maps[i]);
+      // Decode raw_ai_response from JSON string
+      if (map['raw_ai_response'] != null && map['raw_ai_response'] is String) {
+        try {
+          map['raw_ai_response'] = jsonDecode(map['raw_ai_response']);
+        } catch (e) {
+          print('Error decoding raw_ai_response JSON: $e for attempt ${map['uuid']}');
+          map['raw_ai_response'] = null; // Default to null on error
+        }
+      }
+      return QuizAttempt.fromMap(map);
     });
   }
 
@@ -393,7 +550,17 @@ class DatabaseService {
       orderBy: 'attempt_timestamp ASC',
     );
     return List.generate(maps.length, (i) {
-      return QuizAttempt.fromMap(maps[i]);
+      final Map<String, dynamic> map = Map<String, dynamic>.from(maps[i]);
+      // Decode raw_ai_response from JSON string
+      if (map['raw_ai_response'] != null && map['raw_ai_response'] is String) {
+        try {
+          map['raw_ai_response'] = jsonDecode(map['raw_ai_response']);
+        } catch (e) {
+          print('Error decoding raw_ai_response JSON: $e for attempt ${map['uuid']}');
+          map['raw_ai_response'] = null; // Default to null on error
+        }
+      }
+      return QuizAttempt.fromMap(map);
     });
   }
 
@@ -405,16 +572,31 @@ class DatabaseService {
       whereArgs: [uuid],
     );
     if (maps.isNotEmpty) {
-      return QuizAttempt.fromMap(maps.first);
+      final Map<String, dynamic> map = Map<String, dynamic>.from(maps.first);
+      // Decode raw_ai_response from JSON string
+      if (map['raw_ai_response'] != null && map['raw_ai_response'] is String) {
+        try {
+          map['raw_ai_response'] = jsonDecode(map['raw_ai_response']);
+        } catch (e) {
+          print('Error decoding raw_ai_response JSON: $e for attempt ${map['uuid']}');
+          map['raw_ai_response'] = null; // Default to null on error
+        }
+      }
+      return QuizAttempt.fromMap(map);
     }
     return null;
   }
 
   Future<int> updateQuizAttempt(QuizAttempt attempt) async {
     final db = await database;
+    final Map<String, dynamic> data = attempt.toMap();
+    // Ensure rawAiResponse is JSON encoded if not null
+    if (attempt.rawAiResponse != null) {
+      data['raw_ai_response'] = jsonEncode(attempt.rawAiResponse);
+    }
     return await db.update(
       'quiz_attempts',
-      attempt.toMap(),
+      data,
       where: 'uuid = ?',
       whereArgs: [attempt.uuid],
     );
@@ -433,7 +615,6 @@ class DatabaseService {
   Future<int> insertStudentProgress(StudentProgress progress) async {
     final db = await database;
     final Map<String, dynamic> data = progress.toMap();
-    // Convert overall_progress_data to JSON string for storage
     if (progress.overallProgressData != null) {
       data['overall_progress_data'] = jsonEncode(progress.overallProgressData);
     }
@@ -449,7 +630,6 @@ class DatabaseService {
     );
     if (maps.isNotEmpty) {
       final Map<String, dynamic> map = Map<String, dynamic>.from(maps.first);
-      // Decode overall_progress_data JSON string back to Map
       if (map['overall_progress_data'] != null && map['overall_progress_data'] is String) {
         try {
           map['overall_progress_data'] = jsonDecode(map['overall_progress_data']);
@@ -470,6 +650,11 @@ class DatabaseService {
     final Map<String, dynamic> data = progress.toMap();
     if (progress.overallProgressData != null) {
       data['overall_progress_data'] = jsonEncode(progress.overallProgressData);
+    }
+    // Handle null uuid for whereArgs
+    if (progress.uuid == null || progress.uuid!.isEmpty) {
+      print('DatabaseService: Cannot update student progress. UUID is null or empty. Attempting insert instead.');
+      return await insertStudentProgress(progress); // Try to insert if UUID is missing for update
     }
     return await db.update(
       'student_progress',

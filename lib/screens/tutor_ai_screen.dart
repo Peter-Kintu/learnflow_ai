@@ -32,6 +32,7 @@ class _TutorAIScreenState extends State<TutorAIScreen> {
       _answer = null;
     });
 
+    // Ensure this URL is correct for your deployed Render backend
     final url = Uri.parse("https://learn-africana-ai.onrender.com/ask_tutor");
     final body = jsonEncode({
       "student_id": _studentIdController.text,
@@ -45,7 +46,10 @@ class _TutorAIScreenState extends State<TutorAIScreen> {
         url,
         headers: {
           "Content-Type": "application/json",
-          "Authorization": "Bearer sk-or-v1-311...bec"
+          // IMPORTANT: REMOVE THE OPENROUTER API KEY FROM HERE.
+          // Your backend (ai.py) handles the OpenRouter API key.
+          // This Flutter app should NOT send it.
+          // "Authorization": "Bearer sk-or-v1-311...bec" // <--- REMOVE THIS LINE
         },
         body: body,
       );
@@ -56,13 +60,16 @@ class _TutorAIScreenState extends State<TutorAIScreen> {
           _answer = data["answer"] ?? "No answer returned.";
         });
       } else {
+        // Log the actual error response from the backend for debugging
+        print('API Error: ${response.statusCode} - ${response.body}');
         setState(() {
-          _answer = "Failed to get response from AI Tutor.";
+          _answer = "Failed to get response from AI Tutor. Status: ${response.statusCode}. Error: ${response.body}";
         });
       }
     } catch (e) {
+      print('Network Error: $e');
       setState(() {
-        _answer = "Error: $e";
+        _answer = "Network Error: $e";
       });
     } finally {
       setState(() {
